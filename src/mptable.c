@@ -146,8 +146,6 @@ static uint8_t get_ioapic_input_count(uint32_t ioapic_addr);
 
 /* Parsed MADT data */
 struct madt_data {
-    uint32_t lapic_addr;
-
     struct {
         uint32_t apic_id;
         uint8_t enabled;
@@ -205,8 +203,12 @@ static void get_cpu_info(uint32_t *signature, uint32_t *features)
 }
 
 /* Get Local APIC version */
-static uint8_t get_lapic_version(uint32_t lapic_addr)
+static uint8_t get_lapic_version(void)
 {
+    uint64_t apic_base = rdmsr(0x1b);
+    if (apic_base & (1 << 10))  /* x2APIC mode: use MSR 0x803 */
+        return rdmsr(0x803) & 0xFF;
+    uint32_t lapic_addr = apic_base & 0xFFFFF000;
     volatile uint32_t *ver_reg = (volatile uint32_t *)(uintptr_t)(lapic_addr + 0x30);
     return (*ver_reg) & 0xFF;
 }
@@ -260,8 +262,6 @@ static bool parse_madt(struct madt_data *data, int helper_apic_id)
     }
 
     struct acpi_madt *madt = (struct acpi_madt *)madt_table.virt_addr;
-    data->lapic_addr = madt->local_interrupt_controller_address;
-
     uint8_t *entry = (uint8_t *)(madt + 1);
     uint8_t *end = (uint8_t *)madt + madt->hdr.length;
     uint32_t bsp_id = get_bsp_apic_id();
@@ -349,17 +349,6 @@ static bool parse_madt(struct madt_data *data, int helper_apic_id)
                     data->nmi_lint = nmi->lint;
                     data->nmi_flags = nmi->flags;
                     data->has_nmi_info = 1;
-                }
-                break;
-            }
-
-            case ACPI_MADT_ENTRY_TYPE_LAPIC_ADDRESS_OVERRIDE: {
-                struct acpi_madt_lapic_address_override *override =
-                    (struct acpi_madt_lapic_address_override *)entry;
-
-                /* Only use if address fits in 32 bits */
-                if (override->address < 0x100000000ULL) {
-                    data->lapic_addr = (uint32_t)override->address;
                 }
                 break;
             }
@@ -622,7 +611,7 @@ bool mptable_init(struct csmwrap_priv *priv)
     /* Get CPU info from CPUID */
     uint32_t cpu_signature, cpu_features;
     get_cpu_info(&cpu_signature, &cpu_features);
-    uint8_t lapic_version = get_lapic_version(madt.lapic_addr);
+    uint8_t lapic_version = get_lapic_version();
 
     /* Ensure at least one PCI bus for backwards compatibility */
     size_t pci_bus_count = discovered_pci_buses.count > 0 ? discovered_pci_buses.count : 1;
@@ -675,7 +664,7 @@ bool mptable_init(struct csmwrap_priv *priv)
     config->spec = 4;  /* MP spec 1.4 */
     memcpy(config->oemid, "CSMWRAP ", 8);
     memcpy(config->productid, "MP TABLE    ", 12);
-    config->lapic = madt.lapic_addr;
+    config->lapic = rdmsr(0x1b) & 0xFFFFF000;
 
     /* CPU entries */
     for (size_t i = 0; i < madt.cpu_count; i++) {
