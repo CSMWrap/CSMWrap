@@ -1,4 +1,5 @@
 #include <efi.h>
+#include <efi/libsmbios.h>
 #include <video.h>
 #include <csmwrap.h>
 #include <oprom.h>
@@ -10,9 +11,6 @@
 
 void *vbios_loc = NULL;
 uintptr_t vbios_size;
-
-/* Forward declaration */
-static bool is_amd_rdna_or_newer(uint16_t vendor_id, uint16_t device_id);
 
 /*
  * Calculate bits per pixel from linear pixel masks.
@@ -305,6 +303,131 @@ static EFI_STATUS csmwrap_pci_vgaarb(struct csmwrap_priv *priv)
     return 0;
 }
 
+/*
+ * Check SMBIOS type 3 (System Enclosure) to determine if this is a portable.
+ */
+static bool is_portable_chassis(void)
+{
+    EFI_GUID smbiosGuid = SMBIOS_TABLE_GUID;
+    EFI_GUID smbios3Guid = SMBIOS3_TABLE_GUID;
+    const uint8_t *table = NULL;
+    uint32_t table_size = 0;
+
+    /* Find SMBIOS structure table address and size */
+    for (UINTN i = 0; i < gST->NumberOfTableEntries; i++) {
+        EFI_CONFIGURATION_TABLE *entry = &gST->ConfigurationTable[i];
+        if (!efi_guidcmp(entry->VendorGuid, smbiosGuid)) {
+            SMBIOS_TABLE_ENTRY_POINT *ep = entry->VendorTable;
+            table = (const uint8_t *)(uintptr_t)ep->TableAddress;
+            table_size = ep->TableLength;
+            break;
+        }
+        if (!efi_guidcmp(entry->VendorGuid, smbios3Guid)) {
+            SMBIOS_TABLE_3_0_ENTRY_POINT *ep = entry->VendorTable;
+            table = (const uint8_t *)(uintptr_t)ep->TableAddress;
+            table_size = ep->TableMaximumSize;
+            /* Don't break — prefer 2.x if both exist */
+        }
+    }
+
+    if (!table || table_size == 0)
+        return false;
+
+    /* Walk structures looking for type 3 */
+    const uint8_t *ptr = table;
+    const uint8_t *end = table + table_size;
+
+    while (ptr + sizeof(SMBIOS_HEADER) <= end) {
+        const SMBIOS_HEADER *hdr = (const SMBIOS_HEADER *)ptr;
+
+        if (hdr->Length < sizeof(SMBIOS_HEADER))
+            break;
+        if (ptr + hdr->Length > end)
+            break;
+
+        if (hdr->Type == 3 && hdr->Length >= 5) {
+            /* Chassis type is byte at offset 5 (after 4-byte header) */
+            uint8_t chassis_type = ptr[5] & 0x7F; /* Mask out lock bit */
+            switch (chassis_type) {
+            case 8:  /* Portable */
+            case 9:  /* Laptop */
+            case 10: /* Notebook */
+            case 14: /* Sub Notebook */
+            case 31: /* Convertible */
+            case 32: /* Detachable */
+                return true;
+            }
+            return false;
+        }
+
+        /* Skip past formatted area and string section (double-null terminated) */
+        const uint8_t *str = ptr + hdr->Length;
+        while (str + 1 < end) {
+            if (str[0] == 0 && str[1] == 0) {
+                str += 2;
+                break;
+            }
+            str++;
+        }
+
+        if (hdr->Type == 127)
+            break;
+
+        ptr = str;
+    }
+
+    return false;
+}
+
+/*
+ * Check if the system has more than one PCI display-class device.
+ */
+static bool has_multiple_gpus(void)
+{
+    EFI_STATUS Status;
+    EFI_HANDLE *HandleBuffer;
+    UINTN HandleCount;
+    EFI_GUID PciIoGuid = EFI_PCI_IO_PROTOCOL_GUID;
+    UINTN gpu_count = 0;
+
+    Status = gBS->LocateHandleBuffer(ByProtocol, &PciIoGuid, NULL,
+                                      &HandleCount, &HandleBuffer);
+    if (EFI_ERROR(Status))
+        return false;
+
+    for (UINTN i = 0; i < HandleCount; i++) {
+        EFI_PCI_IO_PROTOCOL *PciIo;
+        PCI_TYPE00 PciConfig;
+
+        Status = gBS->HandleProtocol(HandleBuffer[i], &PciIoGuid, (VOID **)&PciIo);
+        if (EFI_ERROR(Status))
+            continue;
+
+        Status = PciIo->Pci.Read(PciIo, EfiPciIoWidthUint32, 0,
+                                  sizeof(PciConfig) / sizeof(UINT32), &PciConfig);
+        if (EFI_ERROR(Status))
+            continue;
+
+        if (PciConfig.Hdr.ClassCode[2] == PCI_CLASS_DISPLAY)
+            gpu_count++;
+    }
+
+    gBS->FreePool(HandleBuffer);
+    return gpu_count > 1;
+}
+
+/*
+ * Detect dual-GPU laptop configurations where OpROM dispatch is unsafe.
+ * Returns true if the system is a portable with multiple GPUs (iGPU + dGPU),
+ * indicating a MUX switch, Optimus, or dGPU-direct display topology.
+ */
+static bool is_dual_gpu_laptop(void)
+{
+    if (!is_portable_chassis())
+        return false;
+    return has_multiple_gpus();
+}
+
 static EFI_STATUS csmwrap_video_oprom_init(struct csmwrap_priv *priv)
 {
     EFI_STATUS Status;
@@ -322,17 +445,34 @@ static EFI_STATUS csmwrap_video_oprom_init(struct csmwrap_priv *priv)
     }
 
     /*
-     * AMD RDNA+ iGPUs have broken legacy OpROMs that don't work properly
-     * with SeaBIOS. Force SeaVGABIOS for these GPUs.
+     * On dual-GPU laptops (iGPU + dGPU), the display may be physically
+     * routed to the dGPU via a MUX switch or hardwired connection.
+     * The iGPU's OpROM will hang waiting for a display that isn't there.
+     * VGA arbitration alone doesn't catch MUX-switched configs since PCI
+     * decode can succeed even when the panel is routed elsewhere.
+     *
+     * Skip this check if the user explicitly selected a GPU with vga= —
+     * they know which device has a working display path.
      */
-    if (is_amd_rdna_or_newer(priv->vga_vendor_id, priv->vga_device_id)) {
-        printf("AMD RDNA+ GPU detected (device %04x), skipping OpROM\n",
-               priv->vga_device_id);
+    if (is_dual_gpu_laptop()) {
+        printf("Dual-GPU laptop detected, skipping OpROM for %04x:%04x\n",
+               priv->vga_vendor_id, priv->vga_device_id);
         return EFI_UNSUPPORTED;
     }
 
-    /* Enable VGA routing to this device for legacy OpROM execution */
-    csmwrap_pci_vgaarb(priv);
+    /*
+     * Enable VGA routing to this device for legacy OpROM execution.
+     * On dual-GPU laptops (MUX switch, dGPU-direct, or Optimus), VGA I/O
+     * and memory may be routed to the discrete GPU. If we can't claim VGA
+     * resources for this device, the OpROM will try to talk to hardware
+     * that isn't listening, causing a hang.
+     */
+    Status = csmwrap_pci_vgaarb(priv);
+    if (Status != EFI_SUCCESS) {
+        printf("VGA arbitration failed for %04x:%04x, skipping OpROM\n",
+               priv->vga_vendor_id, priv->vga_device_id);
+        return EFI_UNSUPPORTED;
+    }
 
     LocalRomSize  = (UINTN) PciIo->RomSize;
     LocalRomImage = PciIo->RomImage;
@@ -359,6 +499,14 @@ static EFI_STATUS csmwrap_video_oprom_init(struct csmwrap_priv *priv)
     if (EFI_ERROR(Status)) {
         DEBUG((DEBUG_ERROR, "GetPciLegacyRom failed: %r\n", Status));
         return Status;
+    }
+
+    /* Reject OpROM if it won't fit below the CSM binary */
+    uintptr_t max_vbios_size = priv->csm_bin_base - VGABIOS_START;
+    if (LocalRomSize > max_vbios_size) {
+        printf("OpROM too large (%u bytes, max %u), skipping\n",
+               (unsigned)LocalRomSize, (unsigned)max_vbios_size);
+        return EFI_UNSUPPORTED;
     }
 
     vbios_loc = LocalRomImage;
@@ -538,79 +686,6 @@ EFI_STATUS csmwrap_video_prepare_exitbs(struct csmwrap_priv *priv)
     return EFI_SUCCESS;
 }
 
-/*
- * Check if the GPU is AMD RDNA or newer architecture.
- *
- * AMD RDNA+ iGPUs have broken/non-functional legacy VGA BIOS (OpROM),
- * so we need to force SeaVGABIOS even if the GPU advertises an OpROM.
- *
- * Strategy: Instead of listing all RDNA+ device IDs (which requires constant
- * updates), we whitelist known-good pre-RDNA (Vega-based) APUs and assume
- * any other AMD iGPU in the typical APU device ID ranges is RDNA+.
- *
- * Device IDs sourced from Linux amdgpu driver and Folding@home GPU database.
- */
-#define AMD_VENDOR_ID 0x1002
-
-static bool is_amd_vega_apu(uint16_t device_id)
-{
-    /*
-     * Known Vega-based APUs with working legacy OpROM:
-     * - Raven Ridge (Ryzen 2000 APU)
-     * - Picasso (Ryzen 3000 APU)
-     * - Renoir (Ryzen 4000 APU)
-     * - Lucienne (Ryzen 5000 APU, Zen 2 refresh)
-     * - Cezanne (Ryzen 5000 APU, Zen 3)
-     * - Barcelo (Ryzen 5000 APU refresh)
-     */
-    switch (device_id) {
-    case 0x15D8:  /* Picasso */
-    case 0x15DD:  /* Raven Ridge */
-    case 0x15E7:  /* Barcelo */
-    case 0x1636:  /* Renoir */
-    case 0x1638:  /* Renoir/Cezanne */
-    case 0x164C:  /* Lucienne */
-        return true;
-    default:
-        return false;
-    }
-}
-
-static bool is_amd_rdna_or_newer(uint16_t vendor_id, uint16_t device_id)
-{
-    if (vendor_id != AMD_VENDOR_ID)
-        return false;
-
-    /*
-     * AMD RDNA 1/2/3/4 discrete GPUs (Navi series):
-     * - 0x73xx: Navi 10/12/14 (RDNA 1), Navi 21/22/23 (RDNA 2)
-     * - 0x74xx: Navi 24 (RDNA 2), Navi 31/32/33 (RDNA 3)
-     * - 0x75xx: Navi 48/44 (RDNA 4)
-     */
-    if ((device_id & 0xFF00) == 0x7300 ||
-        (device_id & 0xFF00) == 0x7400 ||
-        (device_id & 0xFF00) == 0x7500)
-        return true;
-
-    /*
-     * AMD APU/iGPU detection:
-     * Device IDs in ranges 0x14xx, 0x15xx, 0x16xx, 0x19xx are typically iGPUs.
-     * If it's not a known Vega APU, assume it's RDNA+ with broken OpROM.
-     */
-    if ((device_id & 0xFF00) == 0x1400 ||
-        (device_id & 0xFF00) == 0x1500 ||
-        (device_id & 0xFF00) == 0x1600 ||
-        (device_id & 0xFF00) == 0x1900) {
-        /* Check if it's a known-good Vega APU */
-        if (is_amd_vega_apu(device_id))
-            return false;
-        /* Unknown APU in these ranges - assume RDNA+ */
-        return true;
-    }
-
-    return false;
-}
-
 void csmwrap_video_early_init(struct csmwrap_priv *priv) {
     if (FindGop(priv) != EFI_SUCCESS) {
         priv->cb_fb.physical_address = 0;
@@ -698,7 +773,14 @@ EFI_STATUS csmwrap_video_init(struct csmwrap_priv *priv)
          * so the VBIOS is dispatched to the right device.
          */
         FindVgaPciInfo(priv);
-        csmwrap_pci_vgaarb(priv);
+        status = csmwrap_pci_vgaarb(priv);
+        if (status != EFI_SUCCESS) {
+            printf("VGA arbitration failed, cannot dispatch user VBIOS\n");
+            vbios_loc = NULL;
+            vbios_size = 0;
+            /* Fall through to try SeaVGABIOS instead */
+            goto try_seavga;
+        }
         if (gConfig.vga_specified)
             FindVgaGop(priv);
         priv->video_type = CSMWRAP_VIDEO_OPROM;
@@ -723,6 +805,7 @@ EFI_STATUS csmwrap_video_init(struct csmwrap_priv *priv)
                gConfig.vga_bus, gConfig.vga_device, gConfig.vga_function);
     }
 
+try_seavga:
     status = csmwrap_video_seavgabios_init(priv);
     if (status == EFI_SUCCESS) {
         return 0;

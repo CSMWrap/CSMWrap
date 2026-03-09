@@ -727,9 +727,8 @@ retry:
     if (vbios_loc != NULL) {
         uintptr_t max_vbios_size = csm_bin_base - VGABIOS_START;
         if (vbios_size > max_vbios_size) {
-            printf("VBIOS too large (%u bytes, max %u) - truncating\n",
-                   (unsigned)vbios_size, (unsigned)max_vbios_size);
-            vbios_size = max_vbios_size;
+            panic("VBIOS too large (%u bytes, max %u)\n",
+                  (unsigned)vbios_size, (unsigned)max_vbios_size);
         }
         memcpy((void*)VGABIOS_START, vbios_loc, vbios_size);
     }
