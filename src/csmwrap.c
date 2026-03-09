@@ -14,6 +14,7 @@
 #include <bios_proxy.h>
 #include <mptable.h>
 #include <config.h>
+#include <oprom.h>
 #include <flanterm.h>
 #include <flanterm_backends/fb.h>
 
@@ -619,6 +620,10 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 
     Status = csmwrap_video_init(&priv);
 
+    /* Enumerate non-VGA PCI option ROMs while boot services are available */
+    struct pci_oprom_list oprom_list;
+    oprom_enumerate(&priv, &oprom_list);
+
     HiPmm = 0xffffffff;
     if (gBS->AllocatePages(AllocateMaxAddress, EfiRuntimeServicesData, HIPMM_SIZE / EFI_PAGE_SIZE, &HiPmm) != EFI_SUCCESS) {
         panic("Unable to alloc HiPmm\n");
@@ -760,6 +765,9 @@ retry:
                         &Regs,
                         NULL,
                         0);
+
+    /* Dispatch non-VGA option ROMs (storage, network, etc.) */
+    oprom_dispatch_all(&priv, &oprom_list);
 
     memset(&Regs, 0, sizeof(EFI_IA32_REGISTER_SET));
     Regs.X.AX = Legacy16UpdateBbs;
