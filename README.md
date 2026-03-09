@@ -1,4 +1,4 @@
-# CSMWrap [![Build Status](https://github.com/FlyGoat/CSMWrap/actions/workflows/build.yml/badge.svg)](https://github.com/FlyGoat/CSMWrap/actions/workflows/build.yml) [![Discord](https://img.shields.io/discord/1390940493873025074?color=5865F2&label=Discord&logo=discord&logoColor=white)](https://discord.gg/3CCgJpzNXH)
+# CSMWrap [![Build Status](https://github.com/CSMWrap/CSMWrap/actions/workflows/build.yml/badge.svg)](https://github.com/CSMWrap/CSMWrap/actions/workflows/build.yml) [![Discord](https://img.shields.io/discord/1390940493873025074?color=5865F2&label=Discord&logo=discord&logoColor=white)](https://discord.gg/3CCgJpzNXH)
 
 CSMWrap is an EFI application designed to be a drop-in solution to enable legacy BIOS booting on modern UEFI-only (class 3) systems.
 It achieves this by wrapping a Compatibility Support Module (CSM) build of the [SeaBIOS project](https://www.seabios.org/)
@@ -10,7 +10,7 @@ The idea is to drop the 64-bit or 32-bit version of CSMWrap (depending on the ha
 directory on a FAT (12, 16, or 32) partition on the medium containing the legacy BIOS OS. UEFI firmware will pick this up and show the
 medium as a bootable device. Ideally, that's all that would be needed.
 
-1. **Download:** Get the latest `csmwrap<ARCH>.efi` from the [Releases page](https://github.com/FlyGoat/CSMWrap/releases).
+1. **Download:** Get the latest `csmwrap<ARCH>.efi` from the [Releases page](https://github.com/CSMWrap/CSMWrap/releases).
 2. **Deploy:** Copy `csmwrap<ARCH>.efi` to a FAT-formatted partition, typically as `/EFI/BOOT/BOOTX64.EFI` (for 64-bit)
   or `/EFI/BOOT/BOOTIA32.EFI` (for 32-bit) (the hardcoded path is needed so that the firmware picks it up automatically).
 3. **Boot:** Select the UEFI boot entry for the drive onto which CSMWrap was deployed.
@@ -114,14 +114,14 @@ And when it comes to improvements that are not necessarily bugs in CSM implement
 
 ## Documentation
 
-For detailed installation, usage, advanced scenarios, and troubleshooting, please consult [our Wiki](https://github.com/FlyGoat/CSMWrap/wiki).
+For detailed installation, usage, advanced scenarios, and troubleshooting, please consult [our Wiki](https://github.com/CSMWrap/CSMWrap/wiki).
 
 Please note that the Wiki is contributed by the community and may be incomplete or inaccurate as per the latest CSMWrap releases!
 
 ## Contributing
 
 Contributions are welcome! Whether it's reporting bugs, suggesting features, improving documentation, or submitting code changes, your help is appreciated.
-Please read the [Contributing](https://github.com/FlyGoat/CSMWrap/wiki/Contributing) guide for more details.
+Please read the [Contributing](https://github.com/CSMWrap/CSMWrap/wiki/Contributing) guide for more details.
 
 Additionally, one can join our [Discord server](https://discord.gg/3CCgJpzNXH) for any project-related discussion, or to otherwise chat with likeminded
 people.

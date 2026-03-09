@@ -27,7 +27,7 @@
 #endif
 
 const char *banner = "CSMWrap Version " BUILD_VERSION "\n"
-                     "https://github.com/FlyGoat/CSMWrap\n"
+                     "https://github.com/CSMWrap/CSMWrap\n"
                      "By: Jiaxun Yang <jiaxun.yang@flygoat.com>\n"
                      "And: Mintsuki <mintsuki@protonmail.com>\n";
 

@@ -12,7 +12,7 @@
 	url = https://github.com/charlesnicholson/nanoprintf.git
 [submodule "seabios"]
 	path = seabios
-	url = https://github.com/FlyGoat/seabios-csmwrap.git
+	url = https://github.com/CSMWrap/seabios-csmwrap.git
 [submodule "uACPI"]
 	path = uACPI
 	url = https://github.com/uACPI/uACPI.git
