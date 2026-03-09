@@ -13,7 +13,7 @@ jobs:
       with:
         submodules: true
     - name: Install distro deps
-      run: sudo apt-get install -y build-essential nasm
+      run: sudo apt-get install -y build-essential nasm mtools xorriso
     - name: make x86_64
       run: |
         make ARCH=x86_64
@@ -24,6 +24,17 @@ jobs:
         make ARCH=ia32
         mkdir -p bin
         cp bin-ia32/csmwrap.efi bin/csmwrapia32.efi
+    - name: generate iso
+      run: |
+        mkdir -p iso/EFI/Boot
+        ln bin/csmwrapx64.efi iso/EFI/Boot/BOOTx64.EFI
+        ln bin/csmwrapia32.efi iso/EFI/Boot/BOOTIA32.EFI
+        fallocate -l 2M iso/efi.img
+        mkfs.fat -F12 -a -b0 -f1 -r16 -R1 iso/efi.img
+        mcopy -si iso/efi.img iso/EFI ::
+        rm -rf iso/EFI
+        xorriso -as mkisofs -V "CSMWRAP" -e "efi.img" -no-emul-boot \
+        -isohybrid-gpt-basdat -part_like_isohybrid -o bin/csmwrap.iso iso
     - uses: actions/upload-artifact@v4
       with:
         name: csmwrap.efi
@@ -47,4 +58,14 @@ jobs:
         upload_url: ${{ github.event.release.upload_url }}
         asset_path: bin/csmwrapia32.efi
         asset_name: csmwrapia32.efi
+        asset_content_type: application/octet-stream
+    - name: Upload release
+      uses: actions/upload-release-asset@v1
+      if: ${{ github.event_name == 'release' }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: bin/csmwrap.iso
+        asset_name: csmwrap.iso
         asset_content_type: application/octet-stream
