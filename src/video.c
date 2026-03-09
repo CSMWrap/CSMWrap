@@ -250,10 +250,9 @@ static EFI_STATUS FindVgaPciInfo(struct csmwrap_priv *priv)
     return EFI_SUCCESS;
 }
 
-static EFI_STATUS csmwrap_pci_vgaarb(struct csmwrap_priv *priv)
+static EFI_STATUS csmwrap_pci_vgaarb(EFI_PCI_IO_PROTOCOL *PciIo)
 {
     EFI_STATUS Status;
-    EFI_PCI_IO_PROTOCOL *PciIo = priv->vga_pci_io;
     UINT64 Attributes = 0;
     UINT64 Supported = 0;
     BOOLEAN unsupported = FALSE;
@@ -428,95 +427,150 @@ static bool is_dual_gpu_laptop(void)
     return has_multiple_gpus();
 }
 
-static EFI_STATUS csmwrap_video_oprom_init(struct csmwrap_priv *priv)
+/*
+ * Try to use a specific PCI device's OpROM for VGA.
+ * Checks VGA arbitration, OpROM extraction, and size constraints.
+ * On success, populates priv VGA fields and sets vbios_loc/vbios_size.
+ */
+static EFI_STATUS try_gpu_oprom(struct csmwrap_priv *priv, EFI_PCI_IO_PROTOCOL *PciIo)
 {
     EFI_STATUS Status;
     PCI_TYPE00 PciConfigHeader;
-    EFI_PCI_IO_PROTOCOL *PciIo;
     UINTN  LocalRomSize;
     VOID  *LocalRomImage;
 
-    /* Find PCI device info - required for OpROM */
-    FindVgaPciInfo(priv);
-
-    PciIo = priv->vga_pci_io;
-    if (!PciIo || !PciIo->RomImage || !PciIo->RomSize) {
+    if (!PciIo->RomImage || !PciIo->RomSize)
         return EFI_UNSUPPORTED;
-    }
 
-    /*
-     * On dual-GPU laptops (iGPU + dGPU), the display may be physically
-     * routed to the dGPU via a MUX switch or hardwired connection.
-     * The iGPU's OpROM will hang waiting for a display that isn't there.
-     * VGA arbitration alone doesn't catch MUX-switched configs since PCI
-     * decode can succeed even when the panel is routed elsewhere.
-     *
-     * Skip this check if the user explicitly selected a GPU with vga= —
-     * they know which device has a working display path.
-     */
-    if (is_dual_gpu_laptop()) {
-        printf("Dual-GPU laptop detected, skipping OpROM for %04x:%04x\n",
-               priv->vga_vendor_id, priv->vga_device_id);
-        return EFI_UNSUPPORTED;
-    }
+    /* Populate priv with this device's info for VGA arbitration and dispatch */
+    PopulateVgaPciInfo(priv, PciIo);
 
-    /*
-     * Enable VGA routing to this device for legacy OpROM execution.
-     * On dual-GPU laptops (MUX switch, dGPU-direct, or Optimus), VGA I/O
-     * and memory may be routed to the discrete GPU. If we can't claim VGA
-     * resources for this device, the OpROM will try to talk to hardware
-     * that isn't listening, causing a hang.
-     */
-    Status = csmwrap_pci_vgaarb(priv);
+    /* Try to claim VGA I/O and memory routing for this device */
+    Status = csmwrap_pci_vgaarb(PciIo);
     if (Status != EFI_SUCCESS) {
-        printf("VGA arbitration failed for %04x:%04x, skipping OpROM\n",
-               priv->vga_vendor_id, priv->vga_device_id);
+        printf("  VGA arbitration failed, skipping\n");
         return EFI_UNSUPPORTED;
     }
 
     LocalRomSize  = (UINTN) PciIo->RomSize;
     LocalRomImage = PciIo->RomImage;
 
-    PciIo->Pci.Read (
-            PciIo,
-            EfiPciIoWidthUint32,
-            0,
-            sizeof (PciConfigHeader) / sizeof (UINT32),
-            &PciConfigHeader
-            );
+    PciIo->Pci.Read(PciIo, EfiPciIoWidthUint32, 0,
+                     sizeof(PciConfigHeader) / sizeof(UINT32),
+                     &PciConfigHeader);
 
-    Status = GetPciLegacyRom (
-             0x0300, // ???
+    Status = GetPciLegacyRom(
+             0x0300,
              PciConfigHeader.Hdr.VendorId,
              PciConfigHeader.Hdr.DeviceId,
              &LocalRomImage,
              &LocalRomSize,
-             NULL /* RuntimeImageLength */,
-             NULL /* OpromRevision */,
-             NULL /* &LocalConfigUtilityCodeHeader */
-             );
+             NULL, NULL, NULL);
 
     if (EFI_ERROR(Status)) {
-        DEBUG((DEBUG_ERROR, "GetPciLegacyRom failed: %r\n", Status));
+        printf("  No legacy ROM image found\n");
         return Status;
     }
 
     /* Reject OpROM if it won't fit below the CSM binary */
     uintptr_t max_vbios_size = priv->csm_bin_base - VGABIOS_START;
     if (LocalRomSize > max_vbios_size) {
-        printf("OpROM too large (%u bytes, max %u), skipping\n",
+        printf("  OpROM too large (%u bytes, max %u), skipping\n",
                (unsigned)LocalRomSize, (unsigned)max_vbios_size);
         return EFI_UNSUPPORTED;
     }
 
     vbios_loc = LocalRomImage;
     vbios_size = LocalRomSize;
-
     priv->video_type = CSMWRAP_VIDEO_OPROM;
 
     printf("Video Initialisation Succeed with OpROM\n");
+    return EFI_SUCCESS;
+}
 
-    return 0;
+static EFI_STATUS csmwrap_video_oprom_init(struct csmwrap_priv *priv)
+{
+    EFI_STATUS Status;
+
+    /*
+     * If the user specified a GPU with vga=, only try that device.
+     */
+    if (gConfig.vga_specified) {
+        EFI_PCI_IO_PROTOCOL *PciIo;
+        Status = FindPciDevice(gConfig.vga_bus, gConfig.vga_device,
+                               gConfig.vga_function, &PciIo);
+        if (EFI_ERROR(Status)) {
+            printf("VGA: configured device %02x:%02x.%x not found\n",
+                   gConfig.vga_bus, gConfig.vga_device, gConfig.vga_function);
+            return EFI_UNSUPPORTED;
+        }
+        return try_gpu_oprom(priv, PciIo);
+    }
+
+    /*
+     * On dual-GPU laptops, the display may be routed to the dGPU via a
+     * MUX switch or hardwired connection. The iGPU's OpROM will hang
+     * waiting for a display that isn't there, and VGA arbitration alone
+     * doesn't catch MUX-switched configs. Skip OpROM entirely.
+     */
+    if (is_dual_gpu_laptop()) {
+        printf("Dual-GPU laptop detected, skipping OpROM\n");
+        return EFI_UNSUPPORTED;
+    }
+
+    /*
+     * Auto-select: try the GOP device first (most likely to be the active
+     * display), then fall through to other GPUs if it fails.
+     */
+    FindVgaPciInfo(priv);
+    if (priv->vga_pci_io) {
+        Status = try_gpu_oprom(priv, priv->vga_pci_io);
+        if (Status == EFI_SUCCESS)
+            return EFI_SUCCESS;
+    }
+
+    /*
+     * GOP device didn't work — enumerate all display-class PCI devices
+     * and try each one until we find a working OpROM with VGA arbitration.
+     */
+    EFI_HANDLE *HandleBuffer;
+    UINTN HandleCount;
+    EFI_GUID PciIoGuid = EFI_PCI_IO_PROTOCOL_GUID;
+
+    Status = gBS->LocateHandleBuffer(ByProtocol, &PciIoGuid, NULL,
+                                      &HandleCount, &HandleBuffer);
+    if (EFI_ERROR(Status))
+        return EFI_UNSUPPORTED;
+
+    for (UINTN i = 0; i < HandleCount; i++) {
+        EFI_PCI_IO_PROTOCOL *PciIo;
+        PCI_TYPE00 PciConfig;
+
+        if (gBS->HandleProtocol(HandleBuffer[i], &PciIoGuid, (VOID **)&PciIo))
+            continue;
+
+        PciIo->Pci.Read(PciIo, EfiPciIoWidthUint32, 0,
+                         sizeof(PciConfig) / sizeof(UINT32), &PciConfig);
+
+        if (PciConfig.Hdr.ClassCode[2] != PCI_CLASS_DISPLAY)
+            continue;
+
+        /* Skip the GOP device we already tried */
+        if (PciIo == priv->vga_pci_io)
+            continue;
+
+        printf("VGA: trying alternate GPU %04x:%04x\n",
+               PciConfig.Hdr.VendorId, PciConfig.Hdr.DeviceId);
+
+        Status = try_gpu_oprom(priv, PciIo);
+        if (Status == EFI_SUCCESS) {
+            gBS->FreePool(HandleBuffer);
+            return EFI_SUCCESS;
+        }
+    }
+
+    gBS->FreePool(HandleBuffer);
+    return EFI_UNSUPPORTED;
 }
 
 static EFI_STATUS csmwrap_video_seavgabios_init(struct csmwrap_priv *priv)
@@ -773,7 +827,7 @@ EFI_STATUS csmwrap_video_init(struct csmwrap_priv *priv)
          * so the VBIOS is dispatched to the right device.
          */
         FindVgaPciInfo(priv);
-        status = csmwrap_pci_vgaarb(priv);
+        status = csmwrap_pci_vgaarb(priv->vga_pci_io);
         if (status != EFI_SUCCESS) {
             printf("VGA arbitration failed, cannot dispatch user VBIOS\n");
             vbios_loc = NULL;
@@ -787,22 +841,16 @@ EFI_STATUS csmwrap_video_init(struct csmwrap_priv *priv)
         return 0;
     }
 
-    /* Try OpROM first (will fail if no PCI info or AMD RDNA+) */
+    /* Try OpROM: user-specified GPU, or auto-select from all GPUs */
     status = csmwrap_video_oprom_init(priv);
     if (status == EFI_SUCCESS) {
         /*
          * Switch gop_handle to the VGA device so DisconnectController
          * targets the right device during exit-boot-services preparation.
          */
-        if (gConfig.vga_specified) {
+        if (gConfig.vga_specified)
             FindVgaGop(priv);
-        }
         return 0;
-    }
-
-    if (gConfig.vga_specified) {
-        printf("VGA: configured device %02x:%02x.%x has no usable OpROM, ignoring\n",
-               gConfig.vga_bus, gConfig.vga_device, gConfig.vga_function);
     }
 
 try_seavga:
