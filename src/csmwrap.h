@@ -71,6 +71,7 @@ struct low_stub {
     EFI_TO_COMPATIBILITY16_INIT_TABLE init_table;
     EFI_TO_COMPATIBILITY16_BOOT_TABLE boot_table;
     EFI_DISPATCH_OPROM_TABLE vga_oprom_table;
+    EFI_DISPATCH_OPROM_TABLE oprom_table;  /* Reused for each non-VGA oprom dispatch */
 
     /* E820 memory map */
     int e820_entries;

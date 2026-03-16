@@ -1,6 +1,8 @@
 #include <efi.h>
+#include <efi/libsmbios.h>
 #include <video.h>
 #include <csmwrap.h>
+#include <oprom.h>
 #include <config.h>
 #include <io.h>
 
@@ -10,8 +12,21 @@
 void *vbios_loc = NULL;
 uintptr_t vbios_size;
 
-/* Forward declaration */
-static bool is_amd_rdna_or_newer(uint16_t vendor_id, uint16_t device_id);
+/*
+ * Calculate bits per pixel from linear pixel masks.
+ * Ported from Limine.
+ */
+static uint16_t linear_masks_to_bpp(uint32_t red_mask, uint32_t green_mask,
+                                    uint32_t blue_mask, uint32_t alpha_mask)
+{
+    uint32_t compound_mask = red_mask | green_mask | blue_mask | alpha_mask;
+    uint16_t ret = 32;
+    while ((compound_mask & (1 << 31)) == 0) {
+        ret--;
+        compound_mask <<= 1;
+    }
+    return ret;
+}
 
 /*
  * Find a GOP with a valid framebuffer and set its mode.
@@ -70,10 +85,33 @@ static EFI_STATUS FindGop(struct csmwrap_priv *priv)
                 continue;
             }
 
-            if (Gop->Mode->FrameBufferBase != 0) {
-                found = true;
-                break;
+            if (Gop->Mode->FrameBufferBase == 0) {
+                continue;
             }
+
+            EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *mi = Gop->Mode->Info;
+
+            /* Skip PixelBltOnly and unknown pixel formats */
+            if (mi->PixelFormat >= PixelBltOnly) {
+                continue;
+            }
+
+            /* Reject PixelBitMask modes with all-zero masks */
+            if (mi->PixelFormat == PixelBitMask
+             && (mi->PixelInformation.RedMask
+               | mi->PixelInformation.GreenMask
+               | mi->PixelInformation.BlueMask
+               | mi->PixelInformation.ReservedMask) == 0) {
+                continue;
+            }
+
+            /* Validate pitch: PixelsPerScanLine must be >= HorizontalResolution */
+            if (mi->PixelsPerScanLine < mi->HorizontalResolution) {
+                continue;
+            }
+
+            found = true;
+            break;
         }
 
         if (!found) {
@@ -212,170 +250,6 @@ static EFI_STATUS FindVgaPciInfo(struct csmwrap_priv *priv)
     return EFI_SUCCESS;
 }
 
-static EFI_STATUS
-GetPciLegacyRom (
-  IN     UINT16 Csm16Revision,
-  IN     UINT16 VendorId,
-  IN     UINT16 DeviceId,
-  IN OUT VOID   **Rom,
-  IN OUT UINTN  *ImageSize,
-  OUT    UINTN  *MaxRuntimeImageLength,   OPTIONAL
-  OUT    UINT8  *OpRomRevision,           OPTIONAL
-  OUT    VOID   **ConfigUtilityCodeHeader OPTIONAL
-  )
-{
-  BOOLEAN                 Match;
-  UINT16                  *DeviceIdList;
-  EFI_PCI_ROM_HEADER      RomHeader;
-  PCI_3_0_DATA_STRUCTURE  *Pcir;
-  VOID                    *BackupImage;
-  VOID                    *BestImage;
-
-
-  if (*ImageSize < sizeof (EFI_PCI_ROM_HEADER)) {
-    return EFI_NOT_FOUND;
-  }
-
-  BestImage     = NULL;
-  BackupImage   = NULL;
-  RomHeader.Raw = *Rom;
-  while (RomHeader.Generic->Signature == PCI_EXPANSION_ROM_HEADER_SIGNATURE) {
-    if (RomHeader.Generic->PcirOffset == 0 ||
-        (RomHeader.Generic->PcirOffset & 3) !=0 ||
-        *ImageSize < RomHeader.Raw - (UINT8 *) *Rom + RomHeader.Generic->PcirOffset + sizeof (PCI_DATA_STRUCTURE)) {
-      break;
-    }
-
-    Pcir = (PCI_3_0_DATA_STRUCTURE *) (RomHeader.Raw + RomHeader.Generic->PcirOffset);
-    //
-    // Check signature in the PCI Data Structure.
-    //
-    if (Pcir->Signature != PCI_DATA_STRUCTURE_SIGNATURE) {
-      break;
-    }
-
-    if (((UINTN)RomHeader.Raw - (UINTN)*Rom) + Pcir->ImageLength * 512 > *ImageSize) {
-      break;
-    }
-
-    if (Pcir->CodeType == PCI_CODE_TYPE_PCAT_IMAGE) {
-      Match = FALSE;
-      if (Pcir->VendorId == VendorId) {
-        if (Pcir->DeviceId == DeviceId) {
-          Match = TRUE;
-        } else if ((Pcir->Revision >= 3) && (Pcir->DeviceListOffset != 0)) {
-          DeviceIdList = (UINT16 *)(((UINT8 *) Pcir) + Pcir->DeviceListOffset);
-          //
-          // Checking the device list
-          //
-          while (*DeviceIdList != 0) {
-            if (*DeviceIdList == DeviceId) {
-              Match = TRUE;
-              break;
-            }
-            DeviceIdList ++;
-          }
-        }
-      }
-
-      if (Match) {
-        if (Csm16Revision >= 0x0300) {
-          //
-          // Case 1: CSM16 3.0
-          //
-          if (Pcir->Revision >= 3) {
-            //
-            // case 1.1: meets OpRom 3.0
-            //           Perfect!!!
-            //
-            BestImage  = RomHeader.Raw;
-            break;
-          } else {
-            //
-            // case 1.2: meets OpRom 2.x
-            //           Store it and try to find the OpRom 3.0
-            //
-            BackupImage = RomHeader.Raw;
-          }
-        } else {
-          //
-          // Case 2: CSM16 2.x
-          //
-          if (Pcir->Revision >= 3) {
-            //
-            // case 2.1: meets OpRom 3.0
-            //           Store it and try to find the OpRom 2.x
-            //
-            BackupImage = RomHeader.Raw;
-          } else {
-            //
-            // case 2.2: meets OpRom 2.x
-            //           Perfect!!!
-            //
-            BestImage   = RomHeader.Raw;
-            break;
-          }
-        }
-      } else {
-        DEBUG ((DEBUG_ERROR, "GetPciLegacyRom - OpRom not match (%04x-%04x)\n", (UINTN)VendorId, (UINTN)DeviceId));
-      }
-    }
-
-    if ((Pcir->Indicator & 0x80) == 0x80) {
-      break;
-    } else {
-      RomHeader.Raw += 512 * Pcir->ImageLength;
-    }
-  }
-
-  if (BestImage == NULL) {
-    if (BackupImage == NULL) {
-      return EFI_NOT_FOUND;
-    }
-    //
-    // The versions of CSM16 and OpRom don't match exactly
-    //
-    BestImage = BackupImage;
-  }
-  RomHeader.Raw = BestImage;
-  Pcir = (PCI_3_0_DATA_STRUCTURE *) (RomHeader.Raw + RomHeader.Generic->PcirOffset);
-  *Rom       = BestImage;
-  *ImageSize = Pcir->ImageLength * 512;
-
-  if (MaxRuntimeImageLength != NULL) {
-    if (Pcir->Revision < 3) {
-      *MaxRuntimeImageLength = 0;
-    } else {
-      *MaxRuntimeImageLength = Pcir->MaxRuntimeImageLength * 512;
-    }
-  }
-
-  if (OpRomRevision != NULL) {
-    //
-    // Optional return PCI Data Structure revision
-    //
-    if (Pcir->Length >= 0x1C) {
-      *OpRomRevision = Pcir->Revision;
-    } else {
-      *OpRomRevision = 0;
-    }
-  }
-
-  if (ConfigUtilityCodeHeader != NULL) {
-    //
-    // Optional return ConfigUtilityCodeHeaderOffset supported by the PC-AT ROM
-    //
-    if ((Pcir->Revision < 3) || (Pcir->ConfigUtilityCodeHeaderOffset == 0)) {
-      *ConfigUtilityCodeHeader = NULL;
-    } else {
-      *ConfigUtilityCodeHeader = RomHeader.Raw + Pcir->ConfigUtilityCodeHeaderOffset;
-    }
-  }
-
-  return EFI_SUCCESS;
-}
-
-
 static EFI_STATUS csmwrap_pci_vgaarb(struct csmwrap_priv *priv)
 {
     EFI_STATUS Status;
@@ -429,6 +303,131 @@ static EFI_STATUS csmwrap_pci_vgaarb(struct csmwrap_priv *priv)
     return 0;
 }
 
+/*
+ * Check SMBIOS type 3 (System Enclosure) to determine if this is a portable.
+ */
+static bool is_portable_chassis(void)
+{
+    EFI_GUID smbiosGuid = SMBIOS_TABLE_GUID;
+    EFI_GUID smbios3Guid = SMBIOS3_TABLE_GUID;
+    const uint8_t *table = NULL;
+    uint32_t table_size = 0;
+
+    /* Find SMBIOS structure table address and size */
+    for (UINTN i = 0; i < gST->NumberOfTableEntries; i++) {
+        EFI_CONFIGURATION_TABLE *entry = &gST->ConfigurationTable[i];
+        if (!efi_guidcmp(entry->VendorGuid, smbiosGuid)) {
+            SMBIOS_TABLE_ENTRY_POINT *ep = entry->VendorTable;
+            table = (const uint8_t *)(uintptr_t)ep->TableAddress;
+            table_size = ep->TableLength;
+            break;
+        }
+        if (!efi_guidcmp(entry->VendorGuid, smbios3Guid)) {
+            SMBIOS_TABLE_3_0_ENTRY_POINT *ep = entry->VendorTable;
+            table = (const uint8_t *)(uintptr_t)ep->TableAddress;
+            table_size = ep->TableMaximumSize;
+            /* Don't break — prefer 2.x if both exist */
+        }
+    }
+
+    if (!table || table_size == 0)
+        return false;
+
+    /* Walk structures looking for type 3 */
+    const uint8_t *ptr = table;
+    const uint8_t *end = table + table_size;
+
+    while (ptr + sizeof(SMBIOS_HEADER) <= end) {
+        const SMBIOS_HEADER *hdr = (const SMBIOS_HEADER *)ptr;
+
+        if (hdr->Length < sizeof(SMBIOS_HEADER))
+            break;
+        if (ptr + hdr->Length > end)
+            break;
+
+        if (hdr->Type == 3 && hdr->Length >= 5) {
+            /* Chassis type is byte at offset 5 (after 4-byte header) */
+            uint8_t chassis_type = ptr[5] & 0x7F; /* Mask out lock bit */
+            switch (chassis_type) {
+            case 8:  /* Portable */
+            case 9:  /* Laptop */
+            case 10: /* Notebook */
+            case 14: /* Sub Notebook */
+            case 31: /* Convertible */
+            case 32: /* Detachable */
+                return true;
+            }
+            return false;
+        }
+
+        /* Skip past formatted area and string section (double-null terminated) */
+        const uint8_t *str = ptr + hdr->Length;
+        while (str + 1 < end) {
+            if (str[0] == 0 && str[1] == 0) {
+                str += 2;
+                break;
+            }
+            str++;
+        }
+
+        if (hdr->Type == 127)
+            break;
+
+        ptr = str;
+    }
+
+    return false;
+}
+
+/*
+ * Check if the system has more than one PCI display-class device.
+ */
+static bool has_multiple_gpus(void)
+{
+    EFI_STATUS Status;
+    EFI_HANDLE *HandleBuffer;
+    UINTN HandleCount;
+    EFI_GUID PciIoGuid = EFI_PCI_IO_PROTOCOL_GUID;
+    UINTN gpu_count = 0;
+
+    Status = gBS->LocateHandleBuffer(ByProtocol, &PciIoGuid, NULL,
+                                      &HandleCount, &HandleBuffer);
+    if (EFI_ERROR(Status))
+        return false;
+
+    for (UINTN i = 0; i < HandleCount; i++) {
+        EFI_PCI_IO_PROTOCOL *PciIo;
+        PCI_TYPE00 PciConfig;
+
+        Status = gBS->HandleProtocol(HandleBuffer[i], &PciIoGuid, (VOID **)&PciIo);
+        if (EFI_ERROR(Status))
+            continue;
+
+        Status = PciIo->Pci.Read(PciIo, EfiPciIoWidthUint32, 0,
+                                  sizeof(PciConfig) / sizeof(UINT32), &PciConfig);
+        if (EFI_ERROR(Status))
+            continue;
+
+        if (PciConfig.Hdr.ClassCode[2] == PCI_CLASS_DISPLAY)
+            gpu_count++;
+    }
+
+    gBS->FreePool(HandleBuffer);
+    return gpu_count > 1;
+}
+
+/*
+ * Detect dual-GPU laptop configurations where OpROM dispatch is unsafe.
+ * Returns true if the system is a portable with multiple GPUs (iGPU + dGPU),
+ * indicating a MUX switch, Optimus, or dGPU-direct display topology.
+ */
+static bool is_dual_gpu_laptop(void)
+{
+    if (!is_portable_chassis())
+        return false;
+    return has_multiple_gpus();
+}
+
 static EFI_STATUS csmwrap_video_oprom_init(struct csmwrap_priv *priv)
 {
     EFI_STATUS Status;
@@ -446,17 +445,34 @@ static EFI_STATUS csmwrap_video_oprom_init(struct csmwrap_priv *priv)
     }
 
     /*
-     * AMD RDNA+ iGPUs have broken legacy OpROMs that don't work properly
-     * with SeaBIOS. Force SeaVGABIOS for these GPUs.
+     * On dual-GPU laptops (iGPU + dGPU), the display may be physically
+     * routed to the dGPU via a MUX switch or hardwired connection.
+     * The iGPU's OpROM will hang waiting for a display that isn't there.
+     * VGA arbitration alone doesn't catch MUX-switched configs since PCI
+     * decode can succeed even when the panel is routed elsewhere.
+     *
+     * Skip this check if the user explicitly selected a GPU with vga= —
+     * they know which device has a working display path.
      */
-    if (is_amd_rdna_or_newer(priv->vga_vendor_id, priv->vga_device_id)) {
-        printf("AMD RDNA+ GPU detected (device %04x), skipping OpROM\n",
-               priv->vga_device_id);
+    if (is_dual_gpu_laptop()) {
+        printf("Dual-GPU laptop detected, skipping OpROM for %04x:%04x\n",
+               priv->vga_vendor_id, priv->vga_device_id);
         return EFI_UNSUPPORTED;
     }
 
-    /* Enable VGA routing to this device for legacy OpROM execution */
-    csmwrap_pci_vgaarb(priv);
+    /*
+     * Enable VGA routing to this device for legacy OpROM execution.
+     * On dual-GPU laptops (MUX switch, dGPU-direct, or Optimus), VGA I/O
+     * and memory may be routed to the discrete GPU. If we can't claim VGA
+     * resources for this device, the OpROM will try to talk to hardware
+     * that isn't listening, causing a hang.
+     */
+    Status = csmwrap_pci_vgaarb(priv);
+    if (Status != EFI_SUCCESS) {
+        printf("VGA arbitration failed for %04x:%04x, skipping OpROM\n",
+               priv->vga_vendor_id, priv->vga_device_id);
+        return EFI_UNSUPPORTED;
+    }
 
     LocalRomSize  = (UINTN) PciIo->RomSize;
     LocalRomImage = PciIo->RomImage;
@@ -483,6 +499,14 @@ static EFI_STATUS csmwrap_video_oprom_init(struct csmwrap_priv *priv)
     if (EFI_ERROR(Status)) {
         DEBUG((DEBUG_ERROR, "GetPciLegacyRom failed: %r\n", Status));
         return Status;
+    }
+
+    /* Reject OpROM if it won't fit below the CSM binary */
+    uintptr_t max_vbios_size = priv->csm_bin_base - VGABIOS_START;
+    if (LocalRomSize > max_vbios_size) {
+        printf("OpROM too large (%u bytes, max %u), skipping\n",
+               (unsigned)LocalRomSize, (unsigned)max_vbios_size);
+        return EFI_UNSUPPORTED;
     }
 
     vbios_loc = LocalRomImage;
@@ -541,12 +565,10 @@ static EFI_STATUS csmwrap_video_seavgabios_init(struct csmwrap_priv *priv)
     cb_fb->physical_address = fb_addr;
     cb_fb->x_resolution = info->HorizontalResolution;
     cb_fb->y_resolution = info->VerticalResolution;
-    /* Always 32 bbp */
-    cb_fb->bytes_per_line = info->PixelsPerScanLine * 4;
-    cb_fb->bits_per_pixel = 32;
 
     switch (info->PixelFormat) {
         case PixelRedGreenBlueReserved8BitPerColor:
+            cb_fb->bits_per_pixel = 32;
             cb_fb->red_mask_pos = 0;
             cb_fb->red_mask_size = 8;
             cb_fb->green_mask_pos = 8;
@@ -557,6 +579,7 @@ static EFI_STATUS csmwrap_video_seavgabios_init(struct csmwrap_priv *priv)
             cb_fb->reserved_mask_size = 8;
             break;
         case PixelBlueGreenRedReserved8BitPerColor:
+            cb_fb->bits_per_pixel = 32;
             cb_fb->blue_mask_pos = 0;
             cb_fb->blue_mask_size = 8;
             cb_fb->green_mask_pos = 8;
@@ -567,6 +590,22 @@ static EFI_STATUS csmwrap_video_seavgabios_init(struct csmwrap_priv *priv)
             cb_fb->reserved_mask_size = 8;
             break;
         case PixelBitMask:
+            /* Reject modes with all-zero pixel masks */
+            if ((info->PixelInformation.RedMask
+               | info->PixelInformation.GreenMask
+               | info->PixelInformation.BlueMask
+               | info->PixelInformation.ReservedMask) == 0) {
+                printf("PixelBitMask mode with all-zero masks\n");
+                return EFI_UNSUPPORTED;
+            }
+
+            /* Calculate BPP from masks instead of assuming 32 */
+            cb_fb->bits_per_pixel = linear_masks_to_bpp(
+                info->PixelInformation.RedMask,
+                info->PixelInformation.GreenMask,
+                info->PixelInformation.BlueMask,
+                info->PixelInformation.ReservedMask);
+
             // Calculate position (find first set bit, 0 if mask is empty)
             cb_fb->red_mask_pos = info->PixelInformation.RedMask ? __builtin_ffs(info->PixelInformation.RedMask) - 1 : 0;
             cb_fb->green_mask_pos = info->PixelInformation.GreenMask ? __builtin_ffs(info->PixelInformation.GreenMask) - 1 : 0;
@@ -582,6 +621,24 @@ static EFI_STATUS csmwrap_video_seavgabios_init(struct csmwrap_priv *priv)
         default:
             printf("Unsupported pixel format: %d\n", info->PixelFormat);
             return EFI_UNSUPPORTED;
+    }
+
+    /*
+     * Recalculate pitch from gop->Mode->Info, as some firmware (e.g. Apple
+     * Macs) report incorrect PixelsPerScanLine via QueryMode.
+     */
+    cb_fb->bytes_per_line = gop->Mode->Info->PixelsPerScanLine * (cb_fb->bits_per_pixel / 8);
+
+    /* Validate pitch */
+    {
+        uint32_t bytes_per_pixel = cb_fb->bits_per_pixel / 8;
+        if (bytes_per_pixel == 0
+         || cb_fb->bytes_per_line % bytes_per_pixel != 0
+         || cb_fb->bytes_per_line < cb_fb->x_resolution * bytes_per_pixel) {
+            printf("Invalid pitch %u (width=%u, bpp=%u)\n",
+                   cb_fb->bytes_per_line, cb_fb->x_resolution, cb_fb->bits_per_pixel);
+            return EFI_UNSUPPORTED;
+        }
     }
 
     vbios_loc = vgabios_bin;
@@ -627,79 +684,6 @@ EFI_STATUS csmwrap_video_prepare_exitbs(struct csmwrap_priv *priv)
     }
 
     return EFI_SUCCESS;
-}
-
-/*
- * Check if the GPU is AMD RDNA or newer architecture.
- *
- * AMD RDNA+ iGPUs have broken/non-functional legacy VGA BIOS (OpROM),
- * so we need to force SeaVGABIOS even if the GPU advertises an OpROM.
- *
- * Strategy: Instead of listing all RDNA+ device IDs (which requires constant
- * updates), we whitelist known-good pre-RDNA (Vega-based) APUs and assume
- * any other AMD iGPU in the typical APU device ID ranges is RDNA+.
- *
- * Device IDs sourced from Linux amdgpu driver and Folding@home GPU database.
- */
-#define AMD_VENDOR_ID 0x1002
-
-static bool is_amd_vega_apu(uint16_t device_id)
-{
-    /*
-     * Known Vega-based APUs with working legacy OpROM:
-     * - Raven Ridge (Ryzen 2000 APU)
-     * - Picasso (Ryzen 3000 APU)
-     * - Renoir (Ryzen 4000 APU)
-     * - Lucienne (Ryzen 5000 APU, Zen 2 refresh)
-     * - Cezanne (Ryzen 5000 APU, Zen 3)
-     * - Barcelo (Ryzen 5000 APU refresh)
-     */
-    switch (device_id) {
-    case 0x15D8:  /* Picasso */
-    case 0x15DD:  /* Raven Ridge */
-    case 0x15E7:  /* Barcelo */
-    case 0x1636:  /* Renoir */
-    case 0x1638:  /* Renoir/Cezanne */
-    case 0x164C:  /* Lucienne */
-        return true;
-    default:
-        return false;
-    }
-}
-
-static bool is_amd_rdna_or_newer(uint16_t vendor_id, uint16_t device_id)
-{
-    if (vendor_id != AMD_VENDOR_ID)
-        return false;
-
-    /*
-     * AMD RDNA 1/2/3/4 discrete GPUs (Navi series):
-     * - 0x73xx: Navi 10/12/14 (RDNA 1), Navi 21/22/23 (RDNA 2)
-     * - 0x74xx: Navi 24 (RDNA 2), Navi 31/32/33 (RDNA 3)
-     * - 0x75xx: Navi 48/44 (RDNA 4)
-     */
-    if ((device_id & 0xFF00) == 0x7300 ||
-        (device_id & 0xFF00) == 0x7400 ||
-        (device_id & 0xFF00) == 0x7500)
-        return true;
-
-    /*
-     * AMD APU/iGPU detection:
-     * Device IDs in ranges 0x14xx, 0x15xx, 0x16xx, 0x19xx are typically iGPUs.
-     * If it's not a known Vega APU, assume it's RDNA+ with broken OpROM.
-     */
-    if ((device_id & 0xFF00) == 0x1400 ||
-        (device_id & 0xFF00) == 0x1500 ||
-        (device_id & 0xFF00) == 0x1600 ||
-        (device_id & 0xFF00) == 0x1900) {
-        /* Check if it's a known-good Vega APU */
-        if (is_amd_vega_apu(device_id))
-            return false;
-        /* Unknown APU in these ranges - assume RDNA+ */
-        return true;
-    }
-
-    return false;
 }
 
 void csmwrap_video_early_init(struct csmwrap_priv *priv) {
@@ -789,7 +773,14 @@ EFI_STATUS csmwrap_video_init(struct csmwrap_priv *priv)
          * so the VBIOS is dispatched to the right device.
          */
         FindVgaPciInfo(priv);
-        csmwrap_pci_vgaarb(priv);
+        status = csmwrap_pci_vgaarb(priv);
+        if (status != EFI_SUCCESS) {
+            printf("VGA arbitration failed, cannot dispatch user VBIOS\n");
+            vbios_loc = NULL;
+            vbios_size = 0;
+            /* Fall through to try SeaVGABIOS instead */
+            goto try_seavga;
+        }
         if (gConfig.vga_specified)
             FindVgaGop(priv);
         priv->video_type = CSMWRAP_VIDEO_OPROM;
@@ -814,6 +805,7 @@ EFI_STATUS csmwrap_video_init(struct csmwrap_priv *priv)
                gConfig.vga_bus, gConfig.vga_device, gConfig.vga_function);
     }
 
+try_seavga:
     status = csmwrap_video_seavgabios_init(priv);
     if (status == EFI_SUCCESS) {
         return 0;

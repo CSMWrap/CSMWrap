@@ -252,7 +252,6 @@ ifeq ($(ARCH),ia32)
 	qemu-system-i386 \
 		-M q35 \
 		-drive if=pflash,unit=0,format=raw,file=edk2-ovmf/ovmf-code-$(ARCH).fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=edk2-ovmf/ovmf-vars-$(ARCH).fd \
 		-drive file=fat:rw:boot \
 		$(QEMUFLAGS)
 endif
@@ -261,7 +260,6 @@ ifeq ($(ARCH),x86_64)
 	qemu-system-x86_64 \
 		-M q35 \
 		-drive if=pflash,unit=0,format=raw,file=edk2-ovmf/ovmf-code-$(ARCH).fd,readonly=on \
-		-drive if=pflash,unit=1,format=raw,file=edk2-ovmf/ovmf-vars-$(ARCH).fd \
 		-drive file=fat:rw:boot \
 		$(QEMUFLAGS)
 endif

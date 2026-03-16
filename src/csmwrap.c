@@ -14,6 +14,7 @@
 #include <bios_proxy.h>
 #include <mptable.h>
 #include <config.h>
+#include <oprom.h>
 #include <flanterm.h>
 #include <flanterm_backends/fb.h>
 
@@ -26,7 +27,7 @@
 #endif
 
 const char *banner = "CSMWrap Version " BUILD_VERSION "\n"
-                     "https://github.com/FlyGoat/CSMWrap\n"
+                     "https://github.com/CSMWrap/CSMWrap\n"
                      "By: Jiaxun Yang <jiaxun.yang@flygoat.com>\n"
                      "And: Mintsuki <mintsuki@protonmail.com>\n";
 
@@ -619,6 +620,10 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 
     Status = csmwrap_video_init(&priv);
 
+    /* Enumerate non-VGA PCI option ROMs while boot services are available */
+    struct pci_oprom_list oprom_list;
+    oprom_enumerate(&priv, &oprom_list);
+
     HiPmm = 0xffffffff;
     if (gBS->AllocatePages(AllocateMaxAddress, EfiRuntimeServicesData, HIPMM_SIZE / EFI_PAGE_SIZE, &HiPmm) != EFI_SUCCESS) {
         panic("Unable to alloc HiPmm\n");
@@ -722,9 +727,8 @@ retry:
     if (vbios_loc != NULL) {
         uintptr_t max_vbios_size = csm_bin_base - VGABIOS_START;
         if (vbios_size > max_vbios_size) {
-            printf("VBIOS too large (%u bytes, max %u) - truncating\n",
-                   (unsigned)vbios_size, (unsigned)max_vbios_size);
-            vbios_size = max_vbios_size;
+            panic("VBIOS too large (%u bytes, max %u)\n",
+                  (unsigned)vbios_size, (unsigned)max_vbios_size);
         }
         memcpy((void*)VGABIOS_START, vbios_loc, vbios_size);
     }
@@ -760,6 +764,9 @@ retry:
                         &Regs,
                         NULL,
                         0);
+
+    /* Dispatch non-VGA option ROMs (storage, network, etc.) */
+    oprom_dispatch_all(&priv, &oprom_list);
 
     memset(&Regs, 0, sizeof(EFI_IA32_REGISTER_SET));
     Regs.X.AX = Legacy16UpdateBbs;

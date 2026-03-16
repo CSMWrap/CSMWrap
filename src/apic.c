@@ -167,7 +167,7 @@ static void x2apic_configure_for_legacy(void)
      */
     val = rdmsr(X2APIC_MSR_LVT_LINT0);
     printf("  x2APIC LINT0 before: 0x%08lx\n", (uint32_t)val);
-    val &= ~(LVT_DELIVERY_MODE_MASK | LVT_TRIGGER_LEVEL |
+    val &= ~(LVT_VECTOR_MASK | LVT_DELIVERY_MODE_MASK | LVT_TRIGGER_LEVEL |
              LVT_POLARITY_ACTIVE_LOW | LVT_MASK);
     val |= LVT_DELIVERY_EXTINT;
     wrmsr(X2APIC_MSR_LVT_LINT0, val);
@@ -181,7 +181,7 @@ static void x2apic_configure_for_legacy(void)
      */
     val = rdmsr(X2APIC_MSR_LVT_LINT1);
     printf("  x2APIC LINT1 before: 0x%08lx\n", (uint32_t)val);
-    val &= ~(LVT_DELIVERY_MODE_MASK | LVT_TRIGGER_LEVEL |
+    val &= ~(LVT_VECTOR_MASK | LVT_DELIVERY_MODE_MASK | LVT_TRIGGER_LEVEL |
              LVT_POLARITY_ACTIVE_LOW | LVT_MASK);
     val |= LVT_DELIVERY_NMI;
     wrmsr(X2APIC_MSR_LVT_LINT1, val);
@@ -248,7 +248,7 @@ static void xapic_configure_for_legacy(uintptr_t apic_base)
     /* Configure LINT0 for ExtINT (Intel SDM example: 0x00000700) */
     val = *lint0_reg;
     printf("  xAPIC LINT0 before: 0x%08x\n", val);
-    val &= ~(LVT_DELIVERY_MODE_MASK | LVT_TRIGGER_LEVEL |
+    val &= ~(LVT_VECTOR_MASK | LVT_DELIVERY_MODE_MASK | LVT_TRIGGER_LEVEL |
              LVT_POLARITY_ACTIVE_LOW | LVT_MASK);
     val |= LVT_DELIVERY_EXTINT;
     *lint0_reg = val;
@@ -257,7 +257,7 @@ static void xapic_configure_for_legacy(uintptr_t apic_base)
     /* Configure LINT1 for NMI (Intel SDM example: 0x00000400) */
     val = *lint1_reg;
     printf("  xAPIC LINT1 before: 0x%08x\n", val);
-    val &= ~(LVT_DELIVERY_MODE_MASK | LVT_TRIGGER_LEVEL |
+    val &= ~(LVT_VECTOR_MASK | LVT_DELIVERY_MODE_MASK | LVT_TRIGGER_LEVEL |
              LVT_POLARITY_ACTIVE_LOW | LVT_MASK);
     val |= LVT_DELIVERY_NMI;
     *lint1_reg = val;

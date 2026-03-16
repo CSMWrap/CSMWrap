@@ -153,10 +153,18 @@ ap_trampoline_start:
     ; memory mailbox only and does not need interrupt delivery.
     ; Must clear both EN (bit 11) and EXTD (bit 10) simultaneously
     ; to correctly transition from x2APIC mode to disabled state.
+    ;
+    ; If x2APIC is active (EXTD set), skip the disable — it may be locked
+    ; (e.g. Nova Lake xAPIC deprecation) and WRMSR would #GP. A legacy OS
+    ; cannot send x2APIC-mode IPIs via MMIO, so leaving the APIC enabled
+    ; in x2APIC mode is safe for the helper core.
     mov ecx, MSR_IA32_APIC_BASE
     rdmsr
+    test eax, APIC_BASE_EXTD
+    jnz .skip_apic_disable
     and eax, ~(APIC_BASE_EN | APIC_BASE_EXTD)
     wrmsr
+.skip_apic_disable:
 
     ; Load 32-bit values into registers for SeaBIOS
     ; (16-bit mode can still use 32-bit registers with operand size prefix)
