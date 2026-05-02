@@ -16,7 +16,7 @@
 
 /* Must match SeaBIOS stacks.c */
 #define BIOS_PROXY_SIGNATURE 0x79787250504D5343ULL  /* "CSMPPrxy" */
-#define HELPER_STACK_SIZE 4096
+#define HELPER_STACK_SIZE 8192
 
 struct bios_proxy_mailbox {
     uint64_t signature;
