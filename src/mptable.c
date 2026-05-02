@@ -346,7 +346,7 @@ static bool parse_madt(struct madt_data *data, int helper_apic_id)
 
                 /* Use the first NMI entry we find (usually applies to all CPUs) */
                 if (!data->has_nmi_info) {
-                    data->nmi_lint = nmi->lint;
+                    data->nmi_lint = nmi->lint & 1;
                     data->nmi_flags = nmi->flags;
                     data->has_nmi_info = 1;
                 }
@@ -819,16 +819,17 @@ bool mptable_init(struct csmwrap_priv *priv)
 prt_done:
 
     /* Local interrupt entries */
-    /* ExtINT on LINT0 (for 8259 PIC passthrough) - BSP only */
+    /* ExtINT on the LINT pin opposite NMI, BSP only (8259 wired to BSP). */
     uint8_t bsp_apic_id = (uint8_t)get_bsp_apic_id();
+    uint8_t extint_lint = madt.nmi_lint ^ 1;
     struct mpt_intsrc *extint = (struct mpt_intsrc *)entry_ptr;
     extint->type = MPT_TYPE_LOCAL_INT;
     extint->irqtype = MP_INT_TYPE_EXTINT;
     extint->irqflag = MP_IRQFLAG_CONFORM;
     extint->srcbus = isa_bus_id;
     extint->srcbusirq = 0;
-    extint->dstapic = bsp_apic_id;  /* BSP only - 8259 is wired to BSP's LINT0 */
-    extint->dstirq = 0;             /* LINT0 */
+    extint->dstapic = bsp_apic_id;
+    extint->dstirq = extint_lint;
     entry_ptr += sizeof(struct mpt_intsrc);
     entry_count++;
 
