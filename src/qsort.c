@@ -42,5 +42,8 @@ static void quick_sort(void* base, size_t size, int (*cmp)(const void*, const vo
 
 // Public interface function
 void qsort(void* ptr, size_t count, size_t size, int (*comp)(const void*, const void*)) {
-    quick_sort(ptr, size, comp, 0, count - 1);
+    if (count < 2) {
+        return;
+    }
+    quick_sort(ptr, size, comp, 0, (int)(count - 1));
 }
