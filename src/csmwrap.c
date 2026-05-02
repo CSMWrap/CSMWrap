@@ -185,16 +185,17 @@ static bool smbios_walk_table(const void *table, uint32_t max_size, struct smbio
         const uint8_t *strings_ptr = strings_start;
 
         /* Look for double-null terminator */
+        bool found_terminator = false;
         while (strings_ptr + 1 < end) {
             if (strings_ptr[0] == 0 && strings_ptr[1] == 0) {
                 strings_ptr += 2;  /* Include both nulls */
+                found_terminator = true;
                 break;
             }
             strings_ptr++;
         }
 
-        if (strings_ptr + 1 >= end && !(strings_ptr[-2] == 0 && strings_ptr[-1] == 0)) {
-            /* Didn't find double-null before end - table might be truncated */
+        if (!found_terminator) {
             printf("  Warning: Missing double-null terminator\n");
             return false;
         }
