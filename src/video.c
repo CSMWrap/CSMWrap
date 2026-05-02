@@ -396,7 +396,10 @@ static EFI_STATUS csmwrap_video_oprom_init(struct csmwrap_priv *priv)
                    gConfig.vga_bus, gConfig.vga_device, gConfig.vga_function);
             return EFI_UNSUPPORTED;
         }
-        return try_gpu_oprom(priv, PciIo);
+        Status = try_gpu_oprom(priv, PciIo);
+        if (Status == EFI_SUCCESS)
+            return EFI_SUCCESS;
+        goto clear_and_fail;
     }
 
     /*
@@ -421,7 +424,7 @@ static EFI_STATUS csmwrap_video_oprom_init(struct csmwrap_priv *priv)
     Status = gBS->LocateHandleBuffer(ByProtocol, &PciIoGuid, NULL,
                                       &HandleCount, &HandleBuffer);
     if (EFI_ERROR(Status))
-        return EFI_UNSUPPORTED;
+        goto clear_and_fail;
 
     for (UINTN i = 0; i < HandleCount; i++) {
         EFI_PCI_IO_PROTOCOL *PciIo;
@@ -451,6 +454,15 @@ static EFI_STATUS csmwrap_video_oprom_init(struct csmwrap_priv *priv)
     }
 
     gBS->FreePool(HandleBuffer);
+
+clear_and_fail:
+    /* Reset VGA priv fields populated by failed try_gpu_oprom calls so the
+     * SeaVGABIOS fallback and later oprom_dispatch_all see no stale state. */
+    priv->vga_pci_io = NULL;
+    priv->vga_pci_bus = 0;
+    priv->vga_pci_devfn = 0;
+    priv->vga_vendor_id = 0;
+    priv->vga_device_id = 0;
     return EFI_UNSUPPORTED;
 }
 
