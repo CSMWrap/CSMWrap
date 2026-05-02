@@ -25,7 +25,7 @@
 #define APIC_BASE_BSP                   (1ULL << 8)   /* Bootstrap processor */
 #define APIC_BASE_EXTD                  (1ULL << 10)  /* x2APIC mode enable */
 #define APIC_BASE_EN                    (1ULL << 11)  /* APIC global enable */
-#define APIC_BASE_ADDR_MASK             0xFFFFFF000ULL
+#define APIC_BASE_ADDR_MASK             0xFFFFFFFFFFFFF000ULL
 
 /* IA32_ARCH_CAPABILITIES bits */
 #define ARCH_CAP_XAPIC_DISABLE          (1ULL << 21)  /* IA32_XAPIC_DISABLE_STATUS exists */
