@@ -22,8 +22,10 @@ static uint16_t linear_masks_to_bpp(uint32_t red_mask, uint32_t green_mask,
                                     uint32_t blue_mask, uint32_t alpha_mask)
 {
     uint32_t compound_mask = red_mask | green_mask | blue_mask | alpha_mask;
+    if (compound_mask == 0)
+        return 0;
     uint16_t ret = 32;
-    while ((compound_mask & (1 << 31)) == 0) {
+    while ((compound_mask & (1U << 31)) == 0) {
         ret--;
         compound_mask <<= 1;
     }
