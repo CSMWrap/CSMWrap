@@ -268,7 +268,7 @@ static EFI_STATUS csmwrap_pci_vgaarb(EFI_PCI_IO_PROTOCOL *PciIo)
     BOOLEAN unsupported = FALSE;
 
     if (!PciIo) {
-        return -1;
+        return EFI_INVALID_PARAMETER;
     }
 
     Status = PciIo->Attributes(PciIo, EfiPciIoAttributeOperationSupported,
@@ -297,7 +297,7 @@ static EFI_STATUS csmwrap_pci_vgaarb(EFI_PCI_IO_PROTOCOL *PciIo)
 
     if (unsupported) {
         printf("%s: Unable to select attribute\n", __func__);
-        return -1;
+        return EFI_UNSUPPORTED;
     }
 
     Status = PciIo->Attributes(PciIo, EfiPciIoAttributeOperationEnable,
@@ -309,7 +309,7 @@ static EFI_STATUS csmwrap_pci_vgaarb(EFI_PCI_IO_PROTOCOL *PciIo)
 
     printf("%s: Success! Attributes: %llx\n", __func__, Attributes);
 
-    return 0;
+    return EFI_SUCCESS;
 }
 
 /*
