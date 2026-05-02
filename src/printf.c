@@ -66,7 +66,7 @@ static void serial_direct_io_initialise(void) {
     outb(port + 0, divisor & 0xff);
     outb(port + 1, (divisor >> 8) & 0xff);
 
-    outb(port + 1, 0x00);
+    /* port+1 is DLM while DLAB=1; clear DLAB before treating it as IER. */
     outb(port + 3, 0x03);
     outb(port + 2, 0xc7);
     outb(port + 4, 0x0b);
