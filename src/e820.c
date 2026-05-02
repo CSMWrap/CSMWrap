@@ -252,6 +252,10 @@ e820_update_cmos(struct csmwrap_priv *priv)
     /* Extended memory above 16MB in 64KB blocks */
     cmos_write(0x34, cmos_34_35 & 0xFF);
     cmos_write(0x35, cmos_34_35 >> 8);
+
+    /* Bit 7 of port 0x70 is the chipset NMI mask; clear it so we don't
+     * hand off to legacy BIOS with NMI delivery gated. */
+    outb(0x70, 0);
 }
 
 /*
