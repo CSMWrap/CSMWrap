@@ -64,21 +64,20 @@ static void flanterm_uefi_free(void *ptr, size_t size)
 
 static void *find_table(uint32_t signature, uint8_t *csm_bin_base, size_t size)
 {
-    bool Done;
-    uint8_t *Ptr;
-    void *Table;
-
-    Done  = FALSE;
-    Table = NULL;
-    for (Ptr = csm_bin_base; Ptr + 4 <= (csm_bin_base + size) && !Done; Ptr += 0x10) {
-        if (*(uint32_t *)Ptr == signature) {
-            Table  = Ptr;
-            // FIXME: Get checksum?
-            Done = TRUE;
-        }
+    /* Compatibility16 header: signature[4], checksum[1], length[1], ... */
+    for (uint8_t *Ptr = csm_bin_base; Ptr + 6 <= csm_bin_base + size; Ptr += 0x10) {
+        if (*(uint32_t *)Ptr != signature)
+            continue;
+        uint8_t table_len = Ptr[5];
+        if (table_len < 6 || (size_t)(Ptr - csm_bin_base) + table_len > size)
+            continue;
+        uint8_t sum = 0;
+        for (uint8_t i = 0; i < table_len; i++)
+            sum += Ptr[i];
+        if (sum == 0)
+            return Ptr;
     }
-
-    return Table;
+    return NULL;
 }
 
 /*
