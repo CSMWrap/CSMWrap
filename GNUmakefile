@@ -140,7 +140,8 @@ ifeq ($(ARCH),ia32)
         -march=i686 \
         -mabi=sysv \
         -mno-80387 \
-        -mno-mmx
+        -mno-mmx \
+        -malign-double
     override LDFLAGS += \
         -m elf_i386
     override NASMFLAGS := \
