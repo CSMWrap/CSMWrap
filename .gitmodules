@@ -1,12 +1,12 @@
 [submodule "freestnd-c-hdrs"]
 	path = freestnd-c-hdrs
-	url = https://codeberg.org/OSDev/freestnd-c-hdrs-0bsd.git
+	url = https://github.com/osdev0/freestnd-c-hdrs-0bsd.git
 [submodule "cc-runtime"]
 	path = cc-runtime
-	url = https://codeberg.org/OSDev/cc-runtime.git
+	url = https://github.com/osdev0/cc-runtime.git
 [submodule "picoefi"]
 	path = picoefi
-	url = https://codeberg.org/PicoEFI/PicoEFI.git
+	url = https://github.com/PicoEFI/PicoEFI.git
 [submodule "nanoprintf"]
 	path = nanoprintf
 	url = https://github.com/charlesnicholson/nanoprintf.git
@@ -18,4 +18,4 @@
 	url = https://github.com/uACPI/uACPI.git
 [submodule "flanterm"]
 	path = flanterm
-	url = https://codeberg.org/Mintsuki/Flanterm.git
+	url = https://github.com/Mintsuki/Flanterm.git
