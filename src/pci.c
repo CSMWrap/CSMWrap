@@ -239,6 +239,12 @@ static uint64_t pci_try_resize_bar(struct pci_address *address, uint8_t bar_inde
 
         uint64_t new_size = 1ULL << (best_size_bit + 20);
 
+        // Save original BAR(s) - PCIe spec: contents are unspecified after resize
+        uint32_t bar_offset = 0x10 + bar_index * 4;
+        uint32_t orig_bar_lo = pci_read32(address, bar_offset);
+        bool bar_is_64 = (orig_bar_lo & 0x6) == 0x4;
+        uint32_t orig_bar_hi = bar_is_64 ? pci_read32(address, bar_offset + 4) : 0;
+
         // Disable memory decode before resizing
         uint16_t cmd = pci_read16(address, 0x04);
         pci_write16(address, 0x04, cmd & ~0x06);  // Clear memory space + bus master
@@ -247,6 +253,12 @@ static uint64_t pci_try_resize_bar(struct pci_address *address, uint8_t bar_inde
         // Preserve BAR index in bits [2:0]
         uint32_t new_ctrl = (ctrl & 0x7) | ((best_size_bit & 0x3F) << 8);
         pci_write32(address, entry_offset + 4, new_ctrl);
+
+        // Restore BAR address clobbered by resize
+        pci_write32(address, bar_offset, orig_bar_lo);
+        if (bar_is_64) {
+            pci_write32(address, bar_offset + 4, orig_bar_hi);
+        }
 
         // Re-enable memory decode
         pci_write16(address, 0x04, cmd);
