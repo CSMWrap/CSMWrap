@@ -32,6 +32,34 @@ static uint16_t linear_masks_to_bpp(uint32_t red_mask, uint32_t green_mask,
     return ret;
 }
 
+/* True if Gop->Mode points at a directly-usable linear framebuffer. Checks
+ * are run against the current Gop->Mode without calling SetMode, so this is
+ * safe to call before deciding whether to disturb the firmware's mode. */
+static bool gop_mode_usable(EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop)
+{
+    if (Gop->Mode == NULL || Gop->Mode->Info == NULL)
+        return false;
+    if (Gop->Mode->FrameBufferBase == 0)
+        return false;
+
+    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *mi = Gop->Mode->Info;
+
+    if (mi->PixelFormat >= PixelBltOnly)
+        return false;
+
+    if (mi->PixelFormat == PixelBitMask
+     && (mi->PixelInformation.RedMask
+       | mi->PixelInformation.GreenMask
+       | mi->PixelInformation.BlueMask
+       | mi->PixelInformation.ReservedMask) == 0)
+        return false;
+
+    if (mi->PixelsPerScanLine < mi->HorizontalResolution)
+        return false;
+
+    return true;
+}
+
 /*
  * Find a GOP with a valid framebuffer and set its mode.
  * This is needed for Flanterm and SeaVGABIOS framebuffer access.
@@ -86,42 +114,20 @@ static EFI_STATUS FindGop(struct csmwrap_priv *priv)
             continue;
         }
 
-        // Try all modes to find one with valid FrameBufferBase
-        UINTN maxMode = Gop->Mode->MaxMode;
-        bool found = false;
-        for (UINTN mode = 0; mode < maxMode; mode++) {
-            Status = Gop->SetMode(Gop, mode);
-            if (EFI_ERROR(Status)) {
-                continue;
+        /* Prefer the firmware's current mode to avoid blanking and resizing
+         * the user's display. Only enumerate-and-SetMode if it isn't usable. */
+        bool found = gop_mode_usable(Gop);
+        if (!found) {
+            UINTN maxMode = Gop->Mode->MaxMode;
+            for (UINTN mode = 0; mode < maxMode; mode++) {
+                Status = Gop->SetMode(Gop, mode);
+                if (EFI_ERROR(Status))
+                    continue;
+                if (gop_mode_usable(Gop)) {
+                    found = true;
+                    break;
+                }
             }
-
-            if (Gop->Mode->FrameBufferBase == 0) {
-                continue;
-            }
-
-            EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *mi = Gop->Mode->Info;
-
-            /* Skip PixelBltOnly and unknown pixel formats */
-            if (mi->PixelFormat >= PixelBltOnly) {
-                continue;
-            }
-
-            /* Reject PixelBitMask modes with all-zero masks */
-            if (mi->PixelFormat == PixelBitMask
-             && (mi->PixelInformation.RedMask
-               | mi->PixelInformation.GreenMask
-               | mi->PixelInformation.BlueMask
-               | mi->PixelInformation.ReservedMask) == 0) {
-                continue;
-            }
-
-            /* Validate pitch: PixelsPerScanLine must be >= HorizontalResolution */
-            if (mi->PixelsPerScanLine < mi->HorizontalResolution) {
-                continue;
-            }
-
-            found = true;
-            break;
         }
 
         if (!found) {
