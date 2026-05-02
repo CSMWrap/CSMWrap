@@ -251,7 +251,7 @@ static uint64_t pci_try_resize_bar(struct pci_address *address, uint8_t bar_inde
 
         // Write new size to control register (size in bits [12:8])
         // Preserve BAR index in bits [2:0]
-        uint32_t new_ctrl = (ctrl & 0x7) | ((best_size_bit & 0x3F) << 8);
+        uint32_t new_ctrl = (ctrl & 0x7) | ((best_size_bit & 0x1F) << 8);
         pci_write32(address, entry_offset + 4, new_ctrl);
 
         // Restore BAR address clobbered by resize
