@@ -288,16 +288,13 @@ int build_e820_map(struct csmwrap_priv *priv, EFI_MEMORY_DESCRIPTOR *memory_map,
     /* Remove whole 1MB, we are going to fix it later */
     e820_remove(priv, 0, 0x100000);
     /*
-     * Add conventional memory as usable. We report 639KB (0x9FC00) to match
-     * what SeaBIOS reports via INT 12h. SeaBIOS calculates conventional memory
-     * from BUILD_LOWRAM_END (0xA0000) minus EBDA size, resulting in ~639KB.
-     * The EBDA is a small region (1KB) at the top of conventional memory.
-     *
-     * Previously, this reported only 512KB which caused a mismatch with INT 12h,
-     * confusing DOS memory managers like HIMEM.SYS and EMM386.
+     * Reproduce SeaBIOS's initial low-memory layout: 639KB usable + 1KB EBDA.
+     * SeaBIOS recomputes its own e820 from endlow/ebda_seg during init and
+     * may grow the EBDA further (option ROMs allocating BBS/ATA/MPT space),
+     * so this map is a starting snapshot, not the final OS-visible map.
+     * Reporting only 512KB here previously confused HIMEM.SYS / EMM386.
      */
     e820_add(priv, 0, 0x9FC00, EfiAcpiAddressRangeMemory);
-    /* Reserve EBDA - standard 1KB at top of conventional memory */
     e820_add(priv, 0x9FC00, 0x400, EfiAcpiAddressRangeReserved);
     /* Reserve Expansion BIOS (video RAM, option ROMs, system ROM) */
     e820_add(priv, 0xa0000, 0x100000 - 0xa0000, EfiAcpiAddressRangeReserved);

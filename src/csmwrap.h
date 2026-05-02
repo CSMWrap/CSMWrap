@@ -92,8 +92,9 @@ struct low_stub {
 #define LOW_STUB_BASE   0x00020000
 /*
  * Conventional memory ends at 640KB (0xA0000) - EBDA size.
- * EBDA is typically 1KB, so conventional memory is 639KB (0x9FC00).
- * This matches SeaBIOS's BUILD_LOWRAM_END - EBDA_SIZE calculation.
+ * The 1KB initial EBDA matches SeaBIOS's EBDA_SIZE_START on entry; SeaBIOS
+ * may grow the EBDA downward during option ROM dispatch and will update its
+ * own e820 accordingly, so this constant only describes the starting layout.
  * The PMM (Post Memory Manager) area is between low_stub and CONVEN_END.
  */
 #define CONVEN_END      0x0009FC00
