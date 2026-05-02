@@ -55,12 +55,7 @@ uint64_t get_nanoseconds_since_boot(void) {
     return usec * 1000;
 }
 
-void delay(uint64_t cycles) {
-    uint64_t next_stop = rdtsc() + cycles;
-
+void stall(uint64_t us) {
+    uint64_t next_stop = rdtsc() + (tsc_freq * us + 999999) / 1000000;
     while (rdtsc() < next_stop);
-}
-
-void delay_us(uint64_t us) {
-    delay((tsc_freq * us + 999999) / 1000000);
 }

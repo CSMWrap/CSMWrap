@@ -223,12 +223,12 @@ static void start_ap_xapic(uint32_t apic_id)
     wait_icr_idle_xapic(lapic_base);
     *icr_high = dest;
     *icr_low = 0x4500;  /* INIT */
-    delay_us(10000);
+    stall(10000);
     wait_icr_idle_xapic(lapic_base);
 
     *icr_high = dest;
     *icr_low = 0x4600 | AP_TRAMPOLINE_VECTOR;  /* SIPI */
-    delay_us(200);
+    stall(200);
     wait_icr_idle_xapic(lapic_base);
 
     *icr_high = dest;
@@ -242,9 +242,9 @@ static void start_ap_xapic(uint32_t apic_id)
 static void start_ap_x2apic(uint32_t apic_id)
 {
     wrmsr(X2APIC_ICR, ((uint64_t)apic_id << 32) | 0x4500);  /* INIT */
-    delay_us(10000);
+    stall(10000);
     wrmsr(X2APIC_ICR, ((uint64_t)apic_id << 32) | 0x4600 | AP_TRAMPOLINE_VECTOR);  /* SIPI */
-    delay_us(200);
+    stall(200);
     wrmsr(X2APIC_ICR, ((uint64_t)apic_id << 32) | 0x4600 | AP_TRAMPOLINE_VECTOR);  /* SIPI (retry) */
 }
 
@@ -681,7 +681,7 @@ int bios_proxy_start_helper(uintptr_t csm_final_base)
         if (*helper_ready) {
             return 0;
         }
-        delay(10000000);
+        stall(10000);
     }
 
     return -1;
