@@ -325,7 +325,7 @@ bool InternalLegacyBiosFarCall (uint16_t Segment, uint16_t Offset, EFI_IA32_REGI
   }
 
   if (Count >= 2) {
-    DEBUG ((DEBUG_ERROR, "ERROR: More than one HW interrupt active with CSM enabled\n"));
+    printf("ERROR: More than one HW interrupt active with CSM enabled\n");
   }
 
   ASSERT (Count < 2);

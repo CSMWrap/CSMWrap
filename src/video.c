@@ -617,12 +617,12 @@ EFI_STATUS csmwrap_video_prepare_exitbs(struct csmwrap_priv *priv)
         EFI_STATUS Status;
 
         if (!priv->gop_handle) {
-            DEBUG((DEBUG_ERROR, "No GOP handle found\n"));
+            printf("No GOP handle found\n");
             return EFI_UNSUPPORTED;
         }
 
         if (gBS->Hdr.Revision < EFI_1_10_BOOT_SERVICES_REVISION && !gBS->DisconnectController) {
-            DEBUG((DEBUG_ERROR, "DisconnectController not supported\n"));
+            printf("DisconnectController not supported\n");
             return EFI_UNSUPPORTED;
         }
 
@@ -633,7 +633,7 @@ EFI_STATUS csmwrap_video_prepare_exitbs(struct csmwrap_priv *priv)
                         );
 
         if (EFI_ERROR(Status)) {
-            DEBUG((DEBUG_ERROR, "DisconnectController failed: %d\n", Status));
+            printf("DisconnectController failed: %d\n", Status);
             return Status;
         }
     }

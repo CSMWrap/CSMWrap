@@ -27,7 +27,7 @@ remove_e820(struct csmwrap_priv *priv, int i)
     int *e820_count = &priv->low_stub->e820_entries;
 
     if (i < 0 || i >= *e820_count) {
-        DEBUG((DEBUG_ERROR, "e820_map remove index out of range\n"));
+        printf("e820_map remove index out of range\n");
         return;
     }
 
@@ -45,7 +45,7 @@ insert_e820(struct csmwrap_priv *priv,
     int *e820_count = &priv->low_stub->e820_entries;
 
     if (*e820_count >= E820_MAX_ENTRIES) {
-        DEBUG((DEBUG_ERROR, "e820_map overflow\n"));
+        printf("e820_map overflow\n");
         return;
     }
 
@@ -74,6 +74,57 @@ dump_map(struct csmwrap_priv *priv)
 
         printf("  %d: %016llx - %016llx = %d %s\n", i,
                e->BaseAddr, e_end, e->Type, e820_type_name(e->Type));
+    }
+}
+
+static const char *
+efi_memory_type_name(uint32_t type)
+{
+    switch (type) {
+    case EfiReservedMemoryType:      return "Reserved";
+    case EfiLoaderCode:              return "LoaderCode";
+    case EfiLoaderData:              return "LoaderData";
+    case EfiBootServicesCode:        return "BSCode";
+    case EfiBootServicesData:        return "BSData";
+    case EfiRuntimeServicesCode:     return "RTCode";
+    case EfiRuntimeServicesData:     return "RTData";
+    case EfiConventionalMemory:      return "Conventional";
+    case EfiUnusableMemory:          return "Unusable";
+    case EfiACPIReclaimMemory:       return "ACPIReclaim";
+    case EfiACPIMemoryNVS:           return "ACPINVS";
+    case EfiMemoryMappedIO:          return "MMIO";
+    case EfiMemoryMappedIOPortSpace: return "MMIOPort";
+    case EfiPalCode:                 return "PalCode";
+    case EfiPersistentMemory:        return "Persistent";
+    case EfiUnacceptedMemoryType:    return "Unaccepted";
+    default:                         return "UNKNOWN";
+    }
+}
+
+// Show the raw UEFI memory map that build_e820_map() consumes.
+static void
+dump_efi_memory_map(EFI_MEMORY_DESCRIPTOR *memory_map,
+                    UINTN memory_map_size, UINTN descriptor_size)
+{
+    EFI_MEMORY_DESCRIPTOR *end = (EFI_MEMORY_DESCRIPTOR *)
+                                 ((uint8_t *)memory_map + memory_map_size);
+    int count = descriptor_size ? (int)(memory_map_size / descriptor_size) : 0;
+
+    printf("EFI memory map has %d entries (descriptor_size=%u):\n",
+           count, (unsigned)descriptor_size);
+
+    int i = 0;
+    for (EFI_MEMORY_DESCRIPTOR *d = memory_map; d < end;
+         d = NextMemoryDescriptor(d, descriptor_size), i++) {
+        uint64_t bytes = d->NumberOfPages * EFI_PAGE_SIZE;
+        uint64_t end_addr = d->PhysicalStart + bytes;
+
+        printf("  %3d: %016llx - %016llx (%6llu pages) %2u %-13s attr=%016llx%s\n",
+               i, d->PhysicalStart, end_addr,
+               (unsigned long long)d->NumberOfPages,
+               d->Type, efi_memory_type_name(d->Type),
+               (unsigned long long)d->Attribute,
+               (d->Attribute & EFI_MEMORY_RUNTIME) ? " RT" : "");
     }
 }
 
@@ -264,6 +315,8 @@ int build_e820_map(struct csmwrap_priv *priv, EFI_MEMORY_DESCRIPTOR *memory_map,
 
     memory_map_end = (EFI_MEMORY_DESCRIPTOR *)((uint8_t *)memory_map + memory_map_size);
 
+    dump_efi_memory_map(memory_map, memory_map_size, descriptor_size);
+
     /* Process each memory descriptor and convert to E820 format */
     for (memory_map_ptr = memory_map; 
          memory_map_ptr < memory_map_end;
@@ -294,9 +347,7 @@ int build_e820_map(struct csmwrap_priv *priv, EFI_MEMORY_DESCRIPTOR *memory_map,
     /* Reserve Expansion BIOS (video RAM, option ROMs, system ROM) */
     e820_add(priv, 0xa0000, 0x100000 - 0xa0000, EfiAcpiAddressRangeReserved);
 
-    if (DEBUG_PRINT_LEVEL & DEBUG_VERBOSE) {
-        dump_map(priv);
-    }
+    dump_map(priv);
 
     e820_update_cmos(priv);
 
