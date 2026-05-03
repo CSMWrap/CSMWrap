@@ -204,6 +204,20 @@ static uint16_t pci_find_ext_capability(struct pci_address *address, uint16_t ca
     return 0;
 }
 
+// Patch the Supported Sizes bitmap for cards that ship a malformed REBAR
+// capability. The bitmap is post-shift: bit N means size 2^(N+20) bytes.
+static uint32_t pci_rebar_apply_quirks(uint16_t vendor, uint16_t device,
+                                       uint8_t bar, uint32_t supported_sizes) {
+    // Sapphire Radeon RX 5600 XT Pulse (1002:731f) advertises only the
+    // 16/32/64 MB bits for BAR 0, while the silicon actually decodes 256 MB
+    // through 8 GB. Returning the unpatched bitmap would have us shrink BAR 0
+    // to 64 MB, which is below what the card's VBIOS expects.
+    if (vendor == 0x1002 && device == 0x731f && bar == 0 && supported_sizes == 0x70) {
+        return 0x3f00;
+    }
+    return supported_sizes;
+}
+
 // Try to resize a BAR to fit within max_size bytes
 // Returns the new size if successful, or 0 if resize not possible
 static uint64_t pci_try_resize_bar(struct pci_address *address, uint8_t bar_index, uint64_t max_size) {
@@ -236,6 +250,10 @@ static uint64_t pci_try_resize_bar(struct pci_address *address, uint8_t bar_inde
         // Found the entry for our BAR
         // Supported sizes are in cap bits [31:4], each bit N represents size 2^(N+20)
         uint32_t supported_sizes = (cap >> 4) & 0x0FFFFFFF;
+
+        uint16_t vendor = pci_read16(address, 0x00);
+        uint16_t device = pci_read16(address, 0x02);
+        supported_sizes = pci_rebar_apply_quirks(vendor, device, bar_index, supported_sizes);
 
 
         // Find the largest size that fits within max_size
