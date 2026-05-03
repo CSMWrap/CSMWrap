@@ -1,4 +1,5 @@
 name: Build
+
 on:
   push:
   pull_request:
@@ -8,43 +9,50 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container: archlinux:latest
     steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-    - name: Install distro deps
-      run: sudo apt-get install -y build-essential nasm
-    - name: make x86_64
-      run: |
-        make ARCH=x86_64
-        mkdir -p bin
-        cp bin-x86_64/csmwrap.efi bin/csmwrapx64.efi
-    - name: make ia32
-      run: |
-        make ARCH=ia32
-        mkdir -p bin
-        cp bin-ia32/csmwrap.efi bin/csmwrapia32.efi
-    - uses: actions/upload-artifact@v4
-      with:
-        name: csmwrap.efi
-        path: bin/*.efi
-    - name: Upload release
-      uses: actions/upload-release-asset@v1
-      if: ${{ github.event_name == 'release' }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: bin/csmwrapx64.efi
-        asset_name: csmwrapx64.efi
-        asset_content_type: application/octet-stream
-    - name: Upload release
-      uses: actions/upload-release-asset@v1
-      if: ${{ github.event_name == 'release' }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: bin/csmwrapia32.efi
-        asset_name: csmwrapia32.efi
-        asset_content_type: application/octet-stream
+      - name: Install distro deps
+        run: pacman --noconfirm -Syu && pacman --needed --noconfirm -S base-devel python git vim nasm
+
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: make x86_64
+        run: |
+          make ARCH=x86_64
+          mkdir -p bin
+          cp bin-x86_64/csmwrap.efi bin/csmwrapx64.efi
+
+      - name: make ia32
+        run: |
+          make ARCH=ia32
+          mkdir -p bin
+          cp bin-ia32/csmwrap.efi bin/csmwrapia32.efi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csmwrap.efi
+          path: bin/*.efi
+
+      - name: Upload release (x86-64)
+        uses: actions/upload-release-asset@v1
+        if: ${{ github.event_name == 'release' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: bin/csmwrapx64.efi
+          asset_name: csmwrapx64.efi
+          asset_content_type: application/octet-stream
+
+      - name: Upload release (IA-32)
+        uses: actions/upload-release-asset@v1
+        if: ${{ github.event_name == 'release' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: bin/csmwrapia32.efi
+          asset_name: csmwrapia32.efi
+          asset_content_type: application/octet-stream
