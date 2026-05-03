@@ -119,16 +119,9 @@ And when it comes to improvements that are not necessarily bugs in CSM implement
 - Allows one to select a non-primary video card for VGA output which native CSM implementations do not allow. This is useful for
   multi-booting modern and legacy OSes.
 
-## Documentation
-
-For detailed installation, usage, advanced scenarios, and troubleshooting, please consult [our Wiki](https://github.com/CSMWrap/CSMWrap/wiki).
-
-Please note that the Wiki is contributed by the community and may be incomplete or inaccurate as per the latest CSMWrap releases!
-
 ## Contributing
 
 Contributions are welcome! Whether it's reporting bugs, suggesting features, improving documentation, or submitting code changes, your help is appreciated.
-Please read the [Contributing](https://github.com/CSMWrap/CSMWrap/wiki/Contributing) guide for more details.
 
 Additionally, one can join our [Discord server](https://discord.gg/3CCgJpzNXH) for any project-related discussion, or to otherwise chat with likeminded
 people.
