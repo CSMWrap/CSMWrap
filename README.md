@@ -65,6 +65,9 @@ EFI executable (e.g. `/EFI/BOOT/csmwrap.ini`). If the file is absent, sensible d
 | `iommu_disable` | bool | `true` | Disable IOMMUs (Intel VT-d / AMD-Vi) before legacy boot |
 | `verbose` | bool | `false` | Show debug output on screen via Flanterm |
 | `vga` | PCI address | *(empty)* | PCI address of the VGA card to use (e.g. `00:02.0`). Format: `BB:DD.F` (hex). When empty, the first available card is used |
+| `system_thread` | int/hex | *(auto)* | APIC ID of the logical CPU to reserve as the CSMWrap system thread (see [the FAQs](#frequently-asked-questions)). Must be an enabled AP (not the BSP) and have an APIC ID below `0xFF`/`255`. When empty, CSMWrap auto-picks the highest-ID AP below `0xFF`/`255`. The selected CPU is hidden from the OS in both the MADT and the MP table |
+| `cpu_allowlist` | int/hex list | *(unset)* | Comma-separated list of APIC IDs of logical CPUs that should be exposed to the OS in the MADT and the MP table. Each entry is either a single ID or an inclusive range `N-M` (e.g. `0,2-4,7`). An empty value (`cpu_allowlist =`) is itself a setting and means "hide every AP" (only the BSP stays visible). The BSP is always exposed regardless. The system thread is always hidden regardless. Mutually exclusive with `cpu_blocklist` |
+| `cpu_blocklist` | int/hex list | *(unset)* | Comma-separated list of APIC IDs of logical CPUs that should be hidden from the OS in the MADT and the MP table. Each entry is either a single ID or an inclusive range `N-M` (e.g. `5-7`). An empty value (`cpu_blocklist =`) is a no-op for visibility but still claims the slot, so `cpu_allowlist` cannot also be set. The BSP is always exposed regardless. The system thread is always hidden regardless. Mutually exclusive with `cpu_allowlist` |
 
 Boolean values accept `true`/`yes`/`1` and `false`/`no`/`0` (case-insensitive). Comments start with `;` or `#`.
 
@@ -77,6 +80,10 @@ serial_port = 0x3f8
 serial_baud = 115200
 vgabios = \EFI\CSMWrap\vgabios.bin
 iommu_disable = true
+
+; Pin the system thread to APIC ID 7 and hide APIC IDs 4 through 6 from the OS.
+system_thread = 7
+cpu_blocklist = 4-6
 ```
 
 ## Frequently Asked Questions

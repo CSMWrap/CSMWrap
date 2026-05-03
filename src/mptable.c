@@ -9,6 +9,7 @@
 #include <efi.h>
 #include <printf.h>
 #include "csmwrap.h"
+#include "config.h"
 #include "mptable.h"
 #include "bios_proxy.h"
 #include "io.h"
@@ -286,6 +287,12 @@ static bool parse_madt(struct madt_data *data, int helper_apic_id)
                     continue;
                 }
 
+                /* Apply user allow/block list (BSP is always kept) */
+                if (lapic->id != bsp_id && !config_cpu_in_filter(lapic->id)) {
+                    entry += hdr->length;
+                    continue;
+                }
+
                 if (data->cpu_count < MAX_CPUS && (lapic->flags & ACPI_PIC_ENABLED)) {
                     data->cpus[data->cpu_count].apic_id = lapic->id;
                     data->cpus[data->cpu_count].enabled = 1;
@@ -306,6 +313,12 @@ static bool parse_madt(struct madt_data *data, int helper_apic_id)
 
                 /* MP table only supports 8-bit APIC IDs */
                 if (x2apic->id > 255) {
+                    entry += hdr->length;
+                    continue;
+                }
+
+                /* Apply user allow/block list (BSP is always kept) */
+                if (x2apic->id != bsp_id && !config_cpu_in_filter(x2apic->id)) {
                     entry += hdr->length;
                     continue;
                 }

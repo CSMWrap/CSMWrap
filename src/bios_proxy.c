@@ -8,6 +8,7 @@
 
 #include <efi.h>
 #include <csmwrap.h>
+#include <config.h>
 #include <io.h>
 #include <time.h>
 #include <uacpi/uacpi.h>
@@ -257,20 +258,83 @@ static void start_ap(uint32_t apic_id)
     }
 }
 
+static uint32_t get_bsp_apic_id(void)
+{
+    if (is_x2apic_mode()) {
+        return (uint32_t)rdmsr(X2APIC_ID);
+    }
+    uintptr_t lapic_base = get_lapic_base();
+    volatile uint32_t *lapic_id_reg = (volatile uint32_t *)(lapic_base + LAPIC_ID);
+    return (*lapic_id_reg >> 24) & 0xFF;
+}
+
 /*
- * Find an available AP to use as helper core by parsing the MADT.
- * Returns the highest APIC ID AP so the helper core is least likely
- * to be the one the OS would use first.
+ * Walk the MADT and check if the given APIC ID names an enabled AP that
+ * we can deliver INIT-SIPI to (i.e. xAPIC-addressable: id < 0xFF).
+ */
+static bool madt_apic_id_is_valid_ap(uint32_t apic_id, uint32_t bsp_id)
+{
+    if (apic_id == bsp_id || apic_id >= 0xFF)
+        return false;
+
+    struct uacpi_table madt_table;
+    if (uacpi_table_find_by_signature(ACPI_MADT_SIGNATURE, &madt_table)
+            != UACPI_STATUS_OK) {
+        return false;
+    }
+
+    struct acpi_madt *madt = (struct acpi_madt *)madt_table.virt_addr;
+    uint8_t *entry = (uint8_t *)(madt + 1);
+    uint8_t *end = (uint8_t *)madt + madt->hdr.length;
+    bool ok = false;
+
+    while (entry < end) {
+        uint8_t type = entry[0];
+        uint8_t len = entry[1];
+        if (len < 2) break;
+
+        if (type == ACPI_MADT_ENTRY_TYPE_LAPIC) {
+            struct acpi_madt_lapic *lapic = (struct acpi_madt_lapic *)entry;
+            if (lapic->id == apic_id && (lapic->flags & ACPI_PIC_ENABLED)) {
+                ok = true;
+                break;
+            }
+        } else if (type == ACPI_MADT_ENTRY_TYPE_LOCAL_X2APIC) {
+            struct acpi_madt_x2apic *x2apic = (struct acpi_madt_x2apic *)entry;
+            if (x2apic->id == apic_id && (x2apic->flags & ACPI_PIC_ENABLED)) {
+                ok = true;
+                break;
+            }
+        }
+        entry += len;
+    }
+
+    uacpi_table_unref(&madt_table);
+    return ok;
+}
+
+/*
+ * Find an available AP to use as the system thread by parsing the MADT.
+ *
+ * If the user has pinned a specific APIC ID via the 'system_thread' config
+ * key, validate and use that. Otherwise, return the highest APIC ID AP so
+ * the system thread is least likely to be the one the OS would use first.
  */
 static int find_available_ap(void)
 {
-    uint32_t bsp_id;
-    if (is_x2apic_mode()) {
-        bsp_id = (uint32_t)rdmsr(X2APIC_ID);
-    } else {
-        uintptr_t lapic_base = get_lapic_base();
-        volatile uint32_t *lapic_id_reg = (volatile uint32_t *)(lapic_base + LAPIC_ID);
-        bsp_id = (*lapic_id_reg >> 24) & 0xFF;
+    uint32_t bsp_id = get_bsp_apic_id();
+
+    if (gConfig.system_thread_specified) {
+        uint32_t want = gConfig.system_thread_apic_id;
+        if (!madt_apic_id_is_valid_ap(want, bsp_id)) {
+            printf("BIOS proxy: configured system_thread APIC ID %u is not "
+                   "a usable AP (must be enabled, not BSP %u, and < 0xFF)\n",
+                   want, bsp_id);
+            return -1;
+        }
+        printf("BIOS proxy: using configured system thread (APIC ID %u)\n",
+               want);
+        return (int)want;
     }
 
     struct uacpi_table madt_table;
@@ -334,7 +398,25 @@ static void *patched_rsdt = NULL;
 static void *patched_xsdt = NULL;
 
 /*
- * Create a patched MADT with the helper core entry removed.
+ * Decide whether a CPU MADT entry should appear in the OS-visible MADT.
+ *
+ *   - The system thread (helper core) is always hidden.
+ *   - The BSP is always kept (we run on it; the OS must see it).
+ *   - Otherwise the user-configured allow/block list decides.
+ */
+static bool cpu_visible_to_os(uint32_t apic_id, uint32_t bsp_id,
+                              int helper_apic_id)
+{
+    if (helper_apic_id >= 0 && apic_id == (uint32_t)helper_apic_id)
+        return false;
+    if (apic_id == bsp_id)
+        return true;
+    return config_cpu_in_filter(apic_id);
+}
+
+/*
+ * Create a patched MADT with the helper core entry removed and any CPUs
+ * filtered out by the user's cpu_allowlist / cpu_blocklist also removed.
  * Returns the new MADT or NULL on failure.
  */
 static struct acpi_madt *create_patched_madt(int helper_apic_id)
@@ -346,35 +428,42 @@ static struct acpi_madt *create_patched_madt(int helper_apic_id)
 
     struct acpi_madt *orig_madt = (struct acpi_madt *)madt_table.virt_addr;
     uint32_t orig_len = orig_madt->hdr.length;
+    uint32_t bsp_id = get_bsp_apic_id();
 
     /* First pass: find entries to remove and calculate new size */
     uint8_t *entry = (uint8_t *)(orig_madt + 1);
     uint8_t *end = (uint8_t *)orig_madt + orig_len;
     uint32_t removed_bytes = 0;
-    bool found = false;
+    uint32_t removed_count = 0;
+    bool found_helper = false;
 
     while (entry < end) {
         uint8_t type = entry[0];
         uint8_t len = entry[1];
         if (len < 2) break;
 
+        uint32_t cpu_id;
+        bool is_cpu = false;
         if (type == ACPI_MADT_ENTRY_TYPE_LAPIC) {
-            struct acpi_madt_lapic *lapic = (struct acpi_madt_lapic *)entry;
-            if (lapic->id == helper_apic_id) {
-                removed_bytes += len;
-                found = true;
-            }
+            cpu_id = ((struct acpi_madt_lapic *)entry)->id;
+            is_cpu = true;
         } else if (type == ACPI_MADT_ENTRY_TYPE_LOCAL_X2APIC) {
-            struct acpi_madt_x2apic *x2apic = (struct acpi_madt_x2apic *)entry;
-            if (x2apic->id == (uint32_t)helper_apic_id) {
+            cpu_id = ((struct acpi_madt_x2apic *)entry)->id;
+            is_cpu = true;
+        }
+
+        if (is_cpu) {
+            if (helper_apic_id >= 0 && cpu_id == (uint32_t)helper_apic_id)
+                found_helper = true;
+            if (!cpu_visible_to_os(cpu_id, bsp_id, helper_apic_id)) {
                 removed_bytes += len;
-                found = true;
+                removed_count++;
             }
         }
         entry += len;
     }
 
-    if (!found) {
+    if (helper_apic_id >= 0 && !found_helper) {
         printf("Warning: helper core APIC ID %d not found in MADT\n", helper_apic_id);
         uacpi_table_unref(&madt_table);
         return NULL;
@@ -400,7 +489,7 @@ static struct acpi_madt *create_patched_madt(int helper_apic_id)
     /* Copy MADT header */
     memcpy(new_madt, orig_madt, sizeof(struct acpi_madt));
 
-    /* Copy entries, skipping all matching helper core entries */
+    /* Copy entries, skipping helper core and any filtered-out CPUs */
     uint8_t *dst = (uint8_t *)(new_madt + 1);
     entry = (uint8_t *)(orig_madt + 1);
 
@@ -411,11 +500,13 @@ static struct acpi_madt *create_patched_madt(int helper_apic_id)
 
         bool skip = false;
         if (type == ACPI_MADT_ENTRY_TYPE_LAPIC) {
-            struct acpi_madt_lapic *lapic = (struct acpi_madt_lapic *)entry;
-            if (lapic->id == helper_apic_id) skip = true;
+            uint32_t id = ((struct acpi_madt_lapic *)entry)->id;
+            if (!cpu_visible_to_os(id, bsp_id, helper_apic_id))
+                skip = true;
         } else if (type == ACPI_MADT_ENTRY_TYPE_LOCAL_X2APIC) {
-            struct acpi_madt_x2apic *x2apic = (struct acpi_madt_x2apic *)entry;
-            if (x2apic->id == (uint32_t)helper_apic_id) skip = true;
+            uint32_t id = ((struct acpi_madt_x2apic *)entry)->id;
+            if (!cpu_visible_to_os(id, bsp_id, helper_apic_id))
+                skip = true;
         }
 
         if (!skip) {
@@ -430,8 +521,9 @@ static struct acpi_madt *create_patched_madt(int helper_apic_id)
     acpi_fix_checksum(&new_madt->hdr);
 
     uacpi_table_unref(&madt_table);
-    printf("Created patched MADT at %p (removed APIC ID %d)\n",
-           (void *)new_madt, helper_apic_id);
+    printf("Created patched MADT at %p (removed %u CPU entries, "
+           "system thread APIC ID %d)\n",
+           (void *)new_madt, removed_count, helper_apic_id);
     return new_madt;
 }
 
