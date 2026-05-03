@@ -312,7 +312,7 @@ static uint64_t pci_try_resize_bar(struct pci_address *address, uint8_t bar_inde
 static struct pci_bus *root_buses[ROOT_BUSES_MAX];
 static size_t root_bus_count = 0;
 
-#define BUS_STRUCT_POOL_COUNT 64
+#define BUS_STRUCT_POOL_COUNT 128
 
 static struct pci_bus *bus_struct_pool = NULL;
 static size_t bus_struct_pool_ptr = 0;
@@ -324,7 +324,7 @@ static struct pci_bus *allocate_bus(void) {
     return &bus_struct_pool[bus_struct_pool_ptr++];
 }
 
-#define DEVICE_STRUCT_POOL_COUNT 256
+#define DEVICE_STRUCT_POOL_COUNT 1024
 
 static struct pci_device *device_struct_pool = NULL;
 static size_t device_struct_pool_ptr = 0;
@@ -336,7 +336,7 @@ static struct pci_device *allocate_device(void) {
     return &device_struct_pool[device_struct_pool_ptr++];
 }
 
-#define BAR_STRUCT_POOL_COUNT 512
+#define BAR_STRUCT_POOL_COUNT 2048
 
 static struct pci_bar *bar_struct_pool = NULL;
 static size_t bar_struct_pool_ptr = 0;
