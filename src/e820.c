@@ -243,6 +243,7 @@ static inline void cmos_write(uint8_t reg, uint8_t val)
  *   0x17/0x18: Total extended memory in KB, saturated to 65535
  *   0x30/0x31: Total extended memory in KB, saturated to 65535 (mirror of 0x17/0x18)
  *   0x34/0x35: Extended memory above 16MB, in 64KB blocks (max 65535)
+ *   0x5B/0x5C/0x5D: Extended memory above 4GB, in 64KB blocks (24-bit, max 0xFFFFFF)
  */
 static void
 e820_update_cmos(struct csmwrap_priv *priv)
@@ -274,14 +275,37 @@ e820_update_cmos(struct csmwrap_priv *priv)
     uint64_t above_16m_64k = (ram_end > 0x1000000) ?
                              (ram_end - 0x1000000) / 65536 : 0;
 
+    /* Find end of contiguous RAM starting from 4GB */
+    uint64_t high_ram_end = 0x100000000ULL;
+    progress = 1;
+    while (progress) {
+        progress = 0;
+        for (int i = 0; i < e820_count; i++) {
+            EFI_E820_ENTRY64 *e = &e820_map[i];
+            uint64_t e_end = e->BaseAddr + e->Length;
+            if (e->Type != EfiAcpiAddressRangeMemory &&
+                e->Type != EfiAcpiAddressRangeACPI)
+                continue;
+            if (e->BaseAddr <= high_ram_end && e_end > high_ram_end) {
+                high_ram_end = e_end;
+                progress = 1;
+            }
+        }
+    }
+
+    uint64_t above_4g_64k = (high_ram_end > 0x100000000ULL) ?
+                            (high_ram_end - 0x100000000ULL) / 65536 : 0;
+
     /* Cap to register widths */
     uint16_t cmos_17_18 = (ext_kb > 65535) ? 65535 : (uint16_t)ext_kb;
     uint16_t cmos_30_31 = (ext_kb > 65535) ? 65535 : (uint16_t)ext_kb;
     uint16_t cmos_34_35 = (above_16m_64k > 65535) ? 65535 :
                           (uint16_t)above_16m_64k;
+    uint32_t cmos_5b_5d = (above_4g_64k > 0xFFFFFF) ? 0xFFFFFF :
+                          (uint32_t)above_4g_64k;
 
-    printf("CMOS: base=640 ext=%u KB >16M=%u x64KB (ram_end=0x%llx)\n",
-           cmos_30_31, cmos_34_35, ram_end);
+    printf("CMOS: base=640 ext=%u KB >16M=%u x64KB >4G=%u x64KB (ram_end=0x%llx high_end=0x%llx)\n",
+           cmos_30_31, cmos_34_35, cmos_5b_5d, ram_end, high_ram_end);
 
     /* Base memory: 640 KB */
     cmos_write(0x15, 640 & 0xFF);
@@ -298,6 +322,11 @@ e820_update_cmos(struct csmwrap_priv *priv)
     /* Extended memory above 16MB in 64KB blocks */
     cmos_write(0x34, cmos_34_35 & 0xFF);
     cmos_write(0x35, cmos_34_35 >> 8);
+
+    /* Extended memory above 4GB in 64KB blocks (24-bit) */
+    cmos_write(0x5B, cmos_5b_5d & 0xFF);
+    cmos_write(0x5C, (cmos_5b_5d >> 8) & 0xFF);
+    cmos_write(0x5D, (cmos_5b_5d >> 16) & 0xFF);
 
     /* Bit 7 of port 0x70 is the chipset NMI mask; clear it so we don't
      * hand off to legacy BIOS with NMI delivery gated. */
