@@ -15,9 +15,14 @@
 #include <uacpi/tables.h>
 #include <uacpi/acpi.h>
 
-/* Must match SeaBIOS stacks.c */
+/* Must match the signature in SeaBIOS stacks.c so it can find the mailbox. */
 #define BIOS_PROXY_SIGNATURE 0x79787250504D5343ULL  /* "CSMPPrxy" */
-#define HELPER_STACK_SIZE 8192
+
+/* Authoritative size of the helper core's stack. SeaBIOS does not allocate
+ * or switch stacks for the helper - it runs every dispatched func_ptr (reset
+ * path, V86 BIOS handlers via call32_proxy, etc.) on this exact buffer - so
+ * this has to be deep enough for the worst-case proxied call chain. */
+#define HELPER_STACK_SIZE 32768
 
 struct bios_proxy_mailbox {
     uint64_t signature;
