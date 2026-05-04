@@ -297,10 +297,9 @@ static uint64_t pci_try_resize_bar(struct pci_address *address, uint8_t bar_inde
         uint16_t cmd = pci_read16(address, 0x04);
         pci_write16(address, 0x04, cmd & ~0x06);  // Clear memory space + bus master
 
-        // Read-modify-write only the BAR Size field. PCIe r6 widened it to
-        // bits [13:8]; older revs used [12:8] with bit 13 RsvdP. Either way,
-        // touching only those bits and preserving the rest is correct.
-        uint32_t new_ctrl = (ctrl & ~0x3F00) | ((best_size_bit & 0x3F) << 8);
+        // Read-modify-write only the BAR Size field (bits [12:8]); other
+        // bits include RsvdP that must be preserved per PCIe spec.
+        uint32_t new_ctrl = (ctrl & ~0x1F00) | ((best_size_bit & 0x1F) << 8);
         pci_write32(address, entry_offset + 4, new_ctrl);
 
         // Restore BAR address clobbered by resize
