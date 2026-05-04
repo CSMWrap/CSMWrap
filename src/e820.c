@@ -301,7 +301,8 @@ e820_update_cmos(struct csmwrap_priv *priv)
 
     /* Bit 7 of port 0x70 is the chipset NMI mask; clear it so we don't
      * hand off to legacy BIOS with NMI delivery gated. */
-    outb(0x70, 0);
+    outb(0x70, 0x0D);
+    inb(0x71); /* complete the CMOS access cycle */
 }
 
 /*
