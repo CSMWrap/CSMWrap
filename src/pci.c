@@ -1190,6 +1190,23 @@ static bool uacpi_discover_root_bridges(void) {
     return true;
 }
 
+size_t pci_get_extra_root_buses(uint8_t *out, size_t cap) {
+    size_t written = 0;
+    for (size_t i = 0; i < root_bus_count; i++) {
+        struct pci_bus *bus = root_buses[i];
+        // SeaBIOS only enumerates segment 0 in real-mode CSM; segment != 0
+        // roots can't be reached via legacy CF8/CFC anyway.
+        if (bus->segment != 0)
+            continue;
+        if (bus->bus == 0)
+            continue;
+        if (written >= cap)
+            return 0;
+        out[written++] = bus->bus;
+    }
+    return written;
+}
+
 bool pci_early_initialize(void) {
     if (gBS->AllocatePool(EfiLoaderData, sizeof(struct pci_bus) * BUS_STRUCT_POOL_COUNT, (void *)&bus_struct_pool) != EFI_SUCCESS) {
         return false;

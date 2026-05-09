@@ -116,4 +116,9 @@ bool pci_late_initialize(void);
 // the device was inactive in UEFI).
 void pci_enable_for_oprom(uint8_t bus, uint8_t devfn);
 
+// Copy the bus numbers of every discovered root bus other than bus 0 into
+// `out` (capacity `cap` bytes). Returns the number of entries written; if
+// the buffer is too small, returns 0 without writing anything.
+size_t pci_get_extra_root_buses(uint8_t *out, size_t cap);
+
 #endif

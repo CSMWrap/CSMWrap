@@ -616,7 +616,8 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     if (bios_proxy_init(Csm16_bin, sizeof(Csm16_bin), rsdp_copy) != 0) {
         panic("BIOS proxy initialization failed\n");
     }
-    if (!pci_early_initialize())
+    bool pci_initialized = pci_early_initialize();
+    if (!pci_initialized)
         printf("pci_early_initialize failed, PCI BAR relocation will be skipped\n");
 
     Status = csmwrap_video_init(&priv);
@@ -726,6 +727,23 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     uintptr_t e820_low = (uintptr_t)&priv.low_stub->e820_map;
     priv.csm_efi_table->E820Pointer = e820_low;
     priv.csm_efi_table->E820Length = sizeof(EFI_E820_ENTRY64) * priv.low_stub->e820_entries;
+
+    /* Hand SeaBIOS the exact extra root bus numbers we discovered via
+     * uACPI. Setting the pointer (even with count==0) signals authoritative
+     * info; if discovery failed we leave the fields zero and SeaBIOS uses
+     * its pre-extension default. */
+    if (pci_initialized) {
+        size_t extra_root_count = pci_get_extra_root_buses(
+            priv.low_stub->extra_pci_roots, EXTRA_PCI_ROOTS_MAX);
+        priv.low_stub->extra_pci_roots_count = (uint8_t)extra_root_count;
+        priv.csm_efi_table->ExtraPciRootListPointer =
+            (uint32_t)(uintptr_t)&priv.low_stub->extra_pci_roots[0];
+        priv.csm_efi_table->ExtraPciRootListCount = (uint8_t)extra_root_count;
+        printf("Reporting %zu extra PCI root bus(es) to SeaBIOS:", extra_root_count);
+        for (size_t i = 0; i < extra_root_count; i++)
+            printf(" %u", priv.low_stub->extra_pci_roots[i]);
+        printf("\n");
+    }
 
     /* Disable 8259 PIC */
     outb(0x21, 0xff);

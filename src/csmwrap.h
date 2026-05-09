@@ -63,6 +63,7 @@ efi_guidcmp (EFI_GUID left, EFI_GUID right)
 #define E820_MAX_ENTRIES 128
 #define MAX_BBS_ENTRIES 32
 #define BBS_DESC_STRING_SIZE 32
+#define EXTRA_PCI_ROOTS_MAX 255
 
 #pragma pack(1)
 struct low_stub {
@@ -81,6 +82,11 @@ struct low_stub {
     size_t bbs_entry_count;
     BBS_TABLE bbs_entries[MAX_BBS_ENTRIES];
     char bbs_desc_strings[MAX_BBS_ENTRIES][BBS_DESC_STRING_SIZE];
+
+    /* Extra (non-zero) PCI root bus numbers, exposed to SeaBIOS so it can
+     * skip its brute-force scan past MaxPCIBus. */
+    uint8_t extra_pci_roots[EXTRA_PCI_ROOTS_MAX];
+    uint8_t extra_pci_roots_count;
 };
 #pragma pack()
 
