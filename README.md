@@ -1,4 +1,13 @@
-# CSMWrap [![Build Status](https://github.com/CSMWrap/CSMWrap/actions/workflows/build.yml/badge.svg)](https://github.com/CSMWrap/CSMWrap/actions/workflows/build.yml) [![Discord](https://img.shields.io/discord/1390940493873025074?color=5865F2&label=Discord&logo=discord&logoColor=white)](https://discord.gg/3CCgJpzNXH)
+<h1 align="center">CSMWrap</h1>
+
+<p align="center">
+    <a href="https://github.com/CSMWrap/CSMWrap/actions/workflows/build.yml"><img src="https://github.com/CSMWrap/CSMWrap/actions/workflows/build.yml/badge.svg" alt="Build Status"></a>
+    <a href="https://discord.gg/3CCgJpzNXH"><img src="https://img.shields.io/discord/1390940493873025074?color=5865F2&label=Discord&logo=discord&logoColor=white" alt="Discord"></a>
+</p>
+
+<p align="center">
+    <img src="logo.svg?raw=true" alt="CSMWrap logo" title="CSMWrap logo" width="400">
+</p>
 
 CSMWrap is an EFI application designed to be a drop-in solution to enable legacy BIOS booting on modern UEFI-only (class 3) systems.
 It achieves this by wrapping a Compatibility Support Module (CSM) build of the [SeaBIOS project](https://www.seabios.org/)
