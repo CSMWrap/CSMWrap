@@ -13,6 +13,8 @@ CSMWrap is an EFI application designed to be a drop-in solution to enable legacy
 It achieves this by wrapping a Compatibility Support Module (CSM) build of the [SeaBIOS project](https://www.seabios.org/)
 as an out-of-firmware EFI application, effectively creating a compatibility layer for traditional PC BIOS operation.
 
+Logo art by [conkkerxd](https://github.com/conkkerxd).
+
 ## Executive Summary
 
 The idea is to drop the 64-bit or 32-bit version of CSMWrap (depending on the hardware, dropping both also works) into a `/EFI/BOOT/`
