@@ -90,17 +90,27 @@ struct ivrs_header {
 
 /*
  * AMD IOMMU Register Offsets
+ *
+ * The control register is 64-bit at offset 0x18, but every bit we touch lives
+ * in the low 32 bits, so we read/write the low half only and leave the upper
+ * half untouched.
  */
-#define AMD_IOMMU_CTRL_REG       0x18
-#define AMD_IOMMU_CTRL_EN        (1ULL << 0)
-#define AMD_IOMMU_CTRL_EVT_LOG   (1ULL << 2)
-#define AMD_IOMMU_CTRL_EVT_INT   (1ULL << 3)
-#define AMD_IOMMU_CTRL_CMDBUF    (1ULL << 12)
-#define AMD_IOMMU_CTRL_PPR_LOG   (1ULL << 13)
-#define AMD_IOMMU_CTRL_PPR_INT   (1ULL << 14)
-#define AMD_IOMMU_CTRL_PPR       (1ULL << 15)
-#define AMD_IOMMU_CTRL_GA_LOG    (1ULL << 28)
-#define AMD_IOMMU_CTRL_GA_INT    (1ULL << 29)
+#define AMD_IOMMU_CTRL_REG          0x18
+#define AMD_IOMMU_CTRL_EN           (1ULL << 0)
+#define AMD_IOMMU_CTRL_EVT_LOG      (1ULL << 2)
+#define AMD_IOMMU_CTRL_EVT_INT      (1ULL << 3)
+#define AMD_IOMMU_CTRL_CMDBUF       (1ULL << 12)
+#define AMD_IOMMU_CTRL_PPR_LOG      (1ULL << 13)
+#define AMD_IOMMU_CTRL_PPR_INT      (1ULL << 14)
+#define AMD_IOMMU_CTRL_PPR          (1ULL << 15)
+#define AMD_IOMMU_CTRL_GA_LOG       (1ULL << 28)
+#define AMD_IOMMU_CTRL_GA_INT       (1ULL << 29)
+
+#define AMD_IOMMU_STATUS_REG        0x2020
+#define AMD_IOMMU_STATUS_EVTLOG_RUN (1ULL << 3)
+#define AMD_IOMMU_STATUS_CMDBUF_RUN (1ULL << 4)
+#define AMD_IOMMU_STATUS_PPRLOG_RUN (1ULL << 7)
+#define AMD_IOMMU_STATUS_GALOG_RUN  (1ULL << 8)
 
 /*
  * Disable a single Intel VT-d IOMMU unit
@@ -204,26 +214,15 @@ static int vtd_disable_all(void) {
     return disabled;
 }
 
-static void writeq(void *addr, uint64_t val) {
-    *(volatile uint64_t *)addr = val;
-    barrier();
-}
-
-static uint64_t readq_iommu(void *addr) {
-    uint64_t val = *(volatile uint64_t *)addr;
-    barrier();
-    return val;
-}
-
 /*
  * Disable a single AMD IOMMU unit
  */
 static bool amd_iommu_disable_unit(uint64_t iommu_base) {
     void *base = (void *)(uintptr_t)iommu_base;
-    uint64_t ctrl;
+    uint32_t ctrl;
 
-    ctrl = readq_iommu(base + AMD_IOMMU_CTRL_REG);
-    printf("  AMD IOMMU at 0x%llx: CTRL=0x%016llx (En=%d)\n",
+    ctrl = readl(base + AMD_IOMMU_CTRL_REG);
+    printf("  AMD IOMMU at 0x%llx: CTRL=0x%08x (En=%d)\n",
            iommu_base, ctrl, !!(ctrl & AMD_IOMMU_CTRL_EN));
 
     if (!(ctrl & AMD_IOMMU_CTRL_EN)) {
@@ -231,17 +230,25 @@ static bool amd_iommu_disable_unit(uint64_t iommu_base) {
         return true;
     }
 
-    /* Disable command buffer, logs and their interrupts first, then the
-     * IOMMU itself. Matches Linux's order in drivers/iommu/amd/init.c. */
+    /* Disable command buffer, logs and their interrupts before clearing the
+     * master enable. Clearing IommuEn while sub-features are still live can
+     * leave queued descriptors and in-flight DMA in an undefined state. */
     ctrl &= ~(AMD_IOMMU_CTRL_CMDBUF |
               AMD_IOMMU_CTRL_EVT_LOG | AMD_IOMMU_CTRL_EVT_INT |
               AMD_IOMMU_CTRL_GA_LOG | AMD_IOMMU_CTRL_GA_INT |
               AMD_IOMMU_CTRL_PPR_LOG | AMD_IOMMU_CTRL_PPR_INT |
               AMD_IOMMU_CTRL_PPR);
-    writeq(base + AMD_IOMMU_CTRL_REG, ctrl);
+    writel(base + AMD_IOMMU_CTRL_REG, ctrl);
+
+    /* The *Run bits are level-sensitive and only drop to 0 once the engine
+     * has actually drained, so wait for them before continuing. */
+    const uint32_t run_mask = AMD_IOMMU_STATUS_CMDBUF_RUN | AMD_IOMMU_STATUS_EVTLOG_RUN |
+                              AMD_IOMMU_STATUS_PPRLOG_RUN | AMD_IOMMU_STATUS_GALOG_RUN;
+    while (readl(base + AMD_IOMMU_STATUS_REG) & run_mask)
+        asm volatile("pause");
 
     ctrl &= ~AMD_IOMMU_CTRL_EN;
-    writeq(base + AMD_IOMMU_CTRL_REG, ctrl);
+    writel(base + AMD_IOMMU_CTRL_REG, ctrl);
 
     printf("    IOMMU disabled successfully\n");
     return true;
