@@ -18,7 +18,7 @@ jobs:
         run: pacman --noconfirm -Syu && pacman --needed --noconfirm -S base-devel python git vim nasm
 
       - name: Mark workspace safe for git
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        run: git config --global --add safe.directory '*'
 
       - uses: actions/checkout@v6
         with:
