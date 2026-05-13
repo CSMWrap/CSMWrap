@@ -578,9 +578,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     }
 
     /* Load configuration from csmwrap.ini next to our executable */
-    if (sfs_dir != NULL && loaded_image != NULL) {
         config_load(sfs_dir, loaded_image->FilePath);
-    }
 
     /* Load custom VGABIOS from config path if specified */
     EFI_FILE_PROTOCOL *vgabios_file_handle = NULL;
