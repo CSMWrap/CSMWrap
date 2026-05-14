@@ -522,6 +522,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     EFI_STATUS Status;
     EFI_IA32_REGISTER_SET Regs;
     BOOLEAN vgabios_from_cbfs = FALSE;
+    const char *vgabios_cbfs_filename = "vgabios.bin";
 
     gST = SystemTable;
     gBS = SystemTable->BootServices;
@@ -580,15 +581,24 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
         sfs_dir = NULL;
     }
 
-    /* Load configuration from csmwrap.ini next to our executable */
+     /* Load configuration from csmwrap.ini next to our executable or from NVRAM */
         config_load(sfs_dir, loaded_image->FilePath);
 
-        if (gConfig.vgabios_path[0] != '\0') {
-
-            if (simple_wcscmp(gConfig.vgabios_path, L"cbfs") == 0 ||
-                simple_wcsncmp(gConfig.vgabios_path, L"cbfs:", 5) == 0) {
+            if (simple_wcscmp(gConfig.vgabios_path, L"cbfs") == 0) {
                 vgabios_from_cbfs = TRUE;
-            }
+            } else if (simple_wcsncmp(gConfig.vgabios_path, L"cbfs:", 5) == 0) {
+                vgabios_from_cbfs = TRUE;
+
+                const CHAR16 *wpath = gConfig.vgabios_path + 5;
+                if (wpath[0] != L'\0') {
+                    char cbfs_filename_buf[256];
+                    UINTN i;
+                    for (i = 0; i < sizeof(cbfs_filename_buf) - 1 && wpath[i] != L'\0'; i++) {
+                        cbfs_filename_buf[i] = (char)wpath[i];
+                    }
+                    cbfs_filename_buf[i] = '\0';
+                    vgabios_cbfs_filename = cbfs_filename_buf;
+                }
         }
 
         
@@ -622,8 +632,8 @@ if (!vgabios_from_cbfs){
         if (!hdr) {
             panic("CBFS header not found");
         }
-        
-        cbfs_data = cbfs_find_file(hdr, "vgabios.bin", &cbfs_size);
+
+        cbfs_data = cbfs_find_file(hdr, vgabios_cbfs_filename, &cbfs_size);
 
         if (!cbfs_data) {
             panic("vgabios.bin not found in CBFS");
@@ -640,7 +650,7 @@ if (!vgabios_from_cbfs){
 
         vbios_size = cbfs_size;
 
-        printf("Loaded VBIOS from CBFS: %p size=0x%x\n", vbios_loc, vbios_size);
+        printf("Loaded VBIOS from CBFS (%s): %p size=0x%x\n", vgabios_cbfs_filename, vbios_loc, vbios_size);
     }
 
     if (sfs_dir != NULL) {
