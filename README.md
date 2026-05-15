@@ -63,7 +63,17 @@ will be used instead of SeaVGABIOS, providing a much better, pretty much native-
 ## Configuration
 
 CSMWrap supports an optional INI-style configuration file. Place a file named `csmwrap.ini` in the same directory as the CSMWrap
-EFI executable (e.g. `/EFI/BOOT/csmwrap.ini`). If the file is absent, sensible defaults are used.
+EFI executable (e.g. `/EFI/BOOT/csmwrap.ini`). 
+If the file is absent NVRAM is tried (see down for setting up NVRAM config), sensible defaults are used, if both are absent.
+
+### Setting up NVRAM based config
+From EFI Shell
+>setvar CsmWrapConfig -guid 7c436110-ab2a-4fff-a880-fe41995c9f82 \
+-bs -rt -nv =L"serial=true;verbose=true;vgabios=\EFI\csmwrap\vgabios.bin"
+
+Or from Linux (efivarfs):
+>printf '\x07\x00\x00\x00serial=true;verbose=true;vgabios=...' \> sys/firmware/efi/efivars/CsmWrapConfig-7c436110-ab2a-4fff-a880-fe41995c9f82
+
 
 ### Options
 
@@ -72,7 +82,7 @@ EFI executable (e.g. `/EFI/BOOT/csmwrap.ini`). If the file is absent, sensible d
 | `serial` | bool | `false` | Enable serial debug output |
 | `serial_port` | hex/int | `0x3f8` | Serial I/O port address (COM1=`0x3f8`, COM2=`0x2f8`, COM3=`0x3e8`, COM4=`0x2e8`) |
 | `serial_baud` | int | `115200` | Serial baud rate |
-| `vgabios` | string | *(empty)* | Path to a custom VBIOS file on the ESP (e.g. `\EFI\CSMWrap\vgabios.bin`). When empty, the card's built-in OpROM is used, and, failing that, SeaVGABIOS is used |
+| `vgabios` | string | *(empty)* | Path to a custom VBIOS file on the ESP (e.g. `\EFI\CSMWrap\vgabios.bin`). When empty, the card's built-in OpROM is used, and, failing that, SeaVGABIOS is used. If vgabios is set to `cbfs` vgabios.bin will tried to be loaded from coreboot cbfs. If you set it to `cbfs:filename` you can use a custom cbfs filename. |
 | `iommu_disable` | bool | `true` | Disable IOMMUs (Intel VT-d / AMD-Vi) before legacy boot |
 | `verbose` | bool | `false` | Show debug output on screen via Flanterm |
 | `vga` | PCI address | *(empty)* | PCI address of the VGA card to use (e.g. `00:02.0`). Format: `BB:DD.F` (hex). When empty, the first available card is used |
