@@ -583,7 +583,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     }
 
      /* Load configuration from csmwrap.ini next to our executable or from NVRAM */
-        config_load(sfs_dir, loaded_image->FilePath);
+        config_load(sfs_dir, loaded_image ? loaded_image->FilePath : NULL);
 
             if (simple_wcscmp(gConfig.vgabios_path, L"cbfs") == 0) {
                 vgabios_from_cbfs = TRUE;
