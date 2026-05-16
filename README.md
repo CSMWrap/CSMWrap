@@ -77,7 +77,7 @@ efivarfs expects, and the double-quoted `%s` argument is emitted verbatim, so th
 survive unmangled (the double quotes are required; without them the shell would word-split the config):
 
 ```sh
-printf '\x07\x00\x00\x00%s' "$(cat csmwrap.ini)" > /sys/firmware/efi/efivars/CSMWrapConfig-7c436110-ab2a-4fff-a880-fe41995c9f82
+printf '\x07\x00\x00\x00%s' "$(cat csmwrap.ini)" > /sys/firmware/efi/efivars/CSMWrapConfig-2910aadb-f7ca-42b5-8ce2-d62d6a69b5ee
 ```
 
 ### Options

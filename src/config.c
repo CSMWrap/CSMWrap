@@ -576,8 +576,9 @@ static bool config_build_path(EFI_DEVICE_PATH_PROTOCOL *file_path,
 }
 
 /*
- * GUID for the CsmWrap EFI variable namespace.
- * {7c436110-ab2a-4fff-a880-fe41995c9f82}
+ * GUID for the CsmWrap EFI variable namespace. Randomly generated; it does
+ * not derive from any vendor (e.g. Apple) namespace.
+ * {2910aadb-f7ca-42b5-8ce2-d62d6a69b5ee}
  *
  * The variable holds raw config bytes, parsed exactly like csmwrap.ini:
  * newline-separated, one key=value per line. Authoring via the UEFI Shell
@@ -591,11 +592,11 @@ static bool config_build_path(EFI_DEVICE_PATH_PROTOCOL *file_path,
  * double-quoted %s argument is emitted verbatim so the file's newlines and
  * backslash paths survive unmangled:
  *
- *   printf '\x07\x00\x00\x00%s' "$(cat csmwrap.ini)" > /sys/firmware/efi/efivars/CSMWrapConfig-7c436110-ab2a-4fff-a880-fe41995c9f82
+ *   printf '\x07\x00\x00\x00%s' "$(cat csmwrap.ini)" > /sys/firmware/efi/efivars/CSMWrapConfig-2910aadb-f7ca-42b5-8ce2-d62d6a69b5ee
  */
 #define CSMWRAP_VAR_NAME   L"CSMWrapConfig"
-#define CSMWRAP_VAR_GUID   { 0x7c436110, 0xab2a, 0x4fff, \
-                             { 0xa8, 0x80, 0xfe, 0x41, 0x99, 0x5c, 0x9f, 0x82 } }
+#define CSMWRAP_VAR_GUID   { 0x2910aadb, 0xf7ca, 0x42b5, \
+                             { 0x8c, 0xe2, 0xd6, 0x2d, 0x6a, 0x69, 0xb5, 0xee } }
 
 static bool config_load_from_nvram(void)
 {
