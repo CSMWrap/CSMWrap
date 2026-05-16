@@ -111,6 +111,11 @@ static uintptr_t cbfs_rom_base(struct cbfs_header *hdr)
 
         uint32_t entry_size = foffset + flen;
         entry_size = (entry_size + 63) & ~63U;
+        if (entry_size == 0) {
+            /* Corrupt entry - keep scanning instead of spinning forever */
+            cur += 64;
+            continue;
+        }
         cur += entry_size;
     }
 
