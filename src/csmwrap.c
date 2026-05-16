@@ -636,7 +636,7 @@ if (!vgabios_from_cbfs){
         cbfs_data = cbfs_find_file(hdr, vgabios_cbfs_filename, &cbfs_size);
 
         if (!cbfs_data) {
-            panic("vgabios.bin not found in CBFS");
+            panic("%s not found in CBFS", vgabios_cbfs_filename);
         }
 
         if (gBS->AllocatePool(EfiLoaderData,cbfs_size + 1, &vbios_loc) != EFI_SUCCESS) {
