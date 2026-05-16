@@ -580,13 +580,13 @@ static bool config_build_path(EFI_DEVICE_PATH_PROTOCOL *file_path,
  * {7c436110-ab2a-4fff-a880-fe41995c9f82}
  *
  * To write the config from a UEFI shell:
- *   setvar CsmWrapConfig -guid 7c436110-ab2a-4fff-a880-fe41995c9f82 \
+ *   setvar CSMWrapConfig -guid 7c436110-ab2a-4fff-a880-fe41995c9f82 \
  *          -bs -rt -nv =L"serial=true;verbose=true;vgabios=\EFI\csmwrap\vgabios.bin"
  * Or from Linux (efivarfs):
  *   printf '\x07\x00\x00\x00serial=true;verbose=true;vgabios=...' \
- *     > /sys/firmware/efi/efivars/CsmWrapConfig-7c436110-ab2a-4fff-a880-fe41995c9f82
+ *     > /sys/firmware/efi/efivars/CSMWrapConfig-7c436110-ab2a-4fff-a880-fe41995c9f82
  */
-#define CSMWRAP_VAR_NAME   L"CsmWrapConfig"
+#define CSMWRAP_VAR_NAME   L"CSMWrapConfig"
 #define CSMWRAP_VAR_GUID   { 0x7c436110, 0xab2a, 0x4fff, \
                              { 0xa8, 0x80, 0xfe, 0x41, 0x99, 0x5c, 0x9f, 0x82 } }
 

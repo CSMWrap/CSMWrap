@@ -68,11 +68,11 @@ If the file is absent NVRAM is tried (see down for setting up NVRAM config), sen
 
 ### Setting up NVRAM based config
 From EFI Shell
->setvar CsmWrapConfig -guid 7c436110-ab2a-4fff-a880-fe41995c9f82 \
+>setvar CSMWrapConfig -guid 7c436110-ab2a-4fff-a880-fe41995c9f82 \
 -bs -rt -nv =L"serial=true;verbose=true;vgabios=\EFI\csmwrap\vgabios.bin"
 
 Or from Linux (efivarfs):
->printf '\x07\x00\x00\x00serial=true;verbose=true;vgabios=...' > /sys/firmware/efi/efivars/CsmWrapConfig-7c436110-ab2a-4fff-a880-fe41995c9f82
+>printf '\x07\x00\x00\x00serial=true;verbose=true;vgabios=...' > /sys/firmware/efi/efivars/CSMWrapConfig-7c436110-ab2a-4fff-a880-fe41995c9f82
 
 
 ### Options
