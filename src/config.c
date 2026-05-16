@@ -579,16 +579,19 @@ static bool config_build_path(EFI_DEVICE_PATH_PROTOCOL *file_path,
  * GUID for the CsmWrap EFI variable namespace.
  * {7c436110-ab2a-4fff-a880-fe41995c9f82}
  *
- * Options are newline-separated, one key=value per line. In the UEFI Shell
- * form the literal "\n" is stored verbatim and translated to a newline when
- * the variable is parsed; printf(1) emits the newline byte itself.
+ * The variable holds raw config bytes, parsed exactly like csmwrap.ini:
+ * newline-separated, one key=value per line. Authoring via the UEFI Shell
+ * "setvar" command is intentionally not supported - its quoted-string form
+ * cannot carry a literal newline, so multi-key config is impossible without
+ * an in-firmware escape codec that collided with backslash paths.
  *
- * To write the config from a UEFI shell:
- *   setvar CSMWrapConfig -guid 7c436110-ab2a-4fff-a880-fe41995c9f82 \
- *          -bs -rt -nv =L"serial=true\nverbose=true\nvgabios=\EFI\csmwrap\vgabios.bin"
- * Or from Linux (efivarfs):
- *   printf '\x07\x00\x00\x00serial=true\nverbose=true\nvgabios=...' \
- *     > /sys/firmware/efi/efivars/CSMWrapConfig-7c436110-ab2a-4fff-a880-fe41995c9f82
+ * Write it from Linux via efivarfs instead, reusing the exact csmwrap.ini.
+ * It must be one printf (efivarfs does a complete variable set per write()):
+ * \x07\x00\x00\x00 is the NV|BS|RT attribute mask efivarfs expects, and the
+ * double-quoted %s argument is emitted verbatim so the file's newlines and
+ * backslash paths survive unmangled:
+ *
+ *   printf '\x07\x00\x00\x00%s' "$(cat csmwrap.ini)" > /sys/firmware/efi/efivars/CSMWrapConfig-7c436110-ab2a-4fff-a880-fe41995c9f82
  */
 #define CSMWRAP_VAR_NAME   L"CSMWrapConfig"
 #define CSMWRAP_VAR_GUID   { 0x7c436110, 0xab2a, 0x4fff, \
@@ -612,11 +615,10 @@ static bool config_load_from_nvram(void)
     }
 
     UINT8 *raw = NULL;
-    if (gBS->AllocatePool(EfiLoaderData, data_size + 2, (void **)&raw) != EFI_SUCCESS) {
+    if (gBS->AllocatePool(EfiLoaderData, data_size + 1, (void **)&raw) != EFI_SUCCESS) {
         return false;
     }
-    raw[data_size]     = 0;
-    raw[data_size + 1] = 0;
+    raw[data_size] = 0;
 
     UINT32 attrs = 0;
     st = gRT->GetVariable(CSMWRAP_VAR_NAME, &guid, &attrs, &data_size, raw);
@@ -628,47 +630,20 @@ static bool config_load_from_nvram(void)
     printf("Config NVRAM: read %lu bytes, attrs=0x%x\n",
            (unsigned long)data_size, (unsigned int)attrs);
 
-    char *buf = NULL;
-    size_t buf_len = 0;
-
-    bool is_wide = (data_size >= 2) && (raw[1] == 0) &&
-                   (raw[0] >= 0x20 && raw[0] < 0x7F) &&
-                   (data_size % 2 == 0);
-
-    if (is_wide) {
-        size_t wchar_count = data_size / 2;
-        if (gBS->AllocatePool(EfiLoaderData, wchar_count + 1,
-                              (void **)&buf) != EFI_SUCCESS) {
-            gBS->FreePool(raw);
-            return false;
-        }
-        CHAR16 *wide = (CHAR16 *)raw;
-        for (size_t i = 0; i < wchar_count; i++) {
-            CHAR16 wc = wide[i];
-            if (wc == 0)
-                break;
-            if (wc == L'\\' && i + 1 < wchar_count && wide[i + 1] == L'n') {
-                buf[buf_len++] = '\n';
-                i++;
-                continue;
-            }
-            buf[buf_len++] = (wc < 0x7F) ? (char)(unsigned char)wc : '?';
-        }
-        buf[buf_len] = '\0';
-    } else {
-        buf = (char *)raw;
-        buf_len = data_size;
-        buf[buf_len] = '\0';
-        raw = NULL;
-    }
+    /*
+     * The data is consumed verbatim, byte-for-byte, exactly like the
+     * csmwrap.ini file: no encoding detection, no escape translation. Write
+     * it as raw bytes with real newlines (see the efivarfs note above).
+     */
+    char *buf = (char *)raw;
+    size_t buf_len = data_size;
+    buf[buf_len] = '\0';
 
     printf("Config NVRAM: final config string (%lu chars):\n%s\n", (unsigned long)buf_len, buf);
 
     config_parse(buf, buf_len);
 
     gBS->FreePool(buf);
-    if (raw)
-        gBS->FreePool(raw);
     return true;
 }
 
