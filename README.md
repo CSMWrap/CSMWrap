@@ -63,22 +63,22 @@ will be used instead of SeaVGABIOS, providing a much better, pretty much native-
 ## Configuration
 
 CSMWrap supports an optional INI-style configuration file. Place a file named `csmwrap.ini` in the same directory as the CSMWrap
-EFI executable (e.g. `/EFI/BOOT/csmwrap.ini`). 
-If the file is absent NVRAM is tried (see down for setting up NVRAM config), sensible defaults are used, if both are absent.
+EFI executable (e.g. `/EFI/BOOT/csmwrap.ini`). If that file is absent, CSMWrap falls back to the NVRAM variable described below.
+If both are absent, sensible defaults are used.
 
 ### Setting up NVRAM based config
 
-Options are newline-separated, one `key=value` per line. In the EFI Shell form
-csmwrap translates a literal `\n` into a newline; on Linux `printf` emits the
-newline byte itself.
+The NVRAM variable holds the same content as `csmwrap.ini`, parsed identically: newline-separated, one `key=value` per line.
 
-From EFI Shell
->setvar CSMWrapConfig -guid 7c436110-ab2a-4fff-a880-fe41995c9f82 \
--bs -rt -nv =L"serial=true\nverbose=true\nvgabios=\EFI\csmwrap\vgabios.bin"
+Authoring via the UEFI Shell `setvar` command is **not supported**: its quoted-string argument cannot carry a literal newline.
+Write the variable from Linux via efivarfs instead, reusing the exact `csmwrap.ini` content. It must be a single `printf`
+(efivarfs performs a complete variable set on every `write()`): the `\x07\x00\x00\x00` prefix is the `NV|BS|RT` attribute mask
+efivarfs expects, and the double-quoted `%s` argument is emitted verbatim, so the file's newline separators and backslash paths
+survive unmangled (the double quotes are required; without them the shell would word-split the config):
 
-Or from Linux (efivarfs):
->printf '\x07\x00\x00\x00serial=true\nverbose=true\nvgabios=...' > /sys/firmware/efi/efivars/CSMWrapConfig-7c436110-ab2a-4fff-a880-fe41995c9f82
-
+```sh
+printf '\x07\x00\x00\x00%s' "$(cat csmwrap.ini)" > /sys/firmware/efi/efivars/CSMWrapConfig-7c436110-ab2a-4fff-a880-fe41995c9f82
+```
 
 ### Options
 
