@@ -672,7 +672,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 
         vbios_size = cbfs_size;
 
-        printf("Loaded VBIOS from CBFS (%s): %p size=0x%x\n", vgabios_cbfs_filename, vbios_loc, vbios_size);
+        printf("Loaded VBIOS from CBFS (%s): %p size=0x%zx\n", vgabios_cbfs_filename, vbios_loc, (size_t)vbios_size);
     }
 
     if (sfs_dir != NULL) {
