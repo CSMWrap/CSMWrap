@@ -579,11 +579,15 @@ static bool config_build_path(EFI_DEVICE_PATH_PROTOCOL *file_path,
  * GUID for the CsmWrap EFI variable namespace.
  * {7c436110-ab2a-4fff-a880-fe41995c9f82}
  *
+ * Options are newline-separated, one key=value per line. In the UEFI Shell
+ * form the literal "\n" is stored verbatim and translated to a newline when
+ * the variable is parsed; printf(1) emits the newline byte itself.
+ *
  * To write the config from a UEFI shell:
  *   setvar CSMWrapConfig -guid 7c436110-ab2a-4fff-a880-fe41995c9f82 \
- *          -bs -rt -nv =L"serial=true;verbose=true;vgabios=\EFI\csmwrap\vgabios.bin"
+ *          -bs -rt -nv =L"serial=true\nverbose=true\nvgabios=\EFI\csmwrap\vgabios.bin"
  * Or from Linux (efivarfs):
- *   printf '\x07\x00\x00\x00serial=true;verbose=true;vgabios=...' \
+ *   printf '\x07\x00\x00\x00serial=true\nverbose=true\nvgabios=...' \
  *     > /sys/firmware/efi/efivars/CSMWrapConfig-7c436110-ab2a-4fff-a880-fe41995c9f82
  */
 #define CSMWRAP_VAR_NAME   L"CSMWrapConfig"
