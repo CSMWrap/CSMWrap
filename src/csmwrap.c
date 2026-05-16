@@ -1,5 +1,4 @@
 #include <stdarg.h>
-#include <string.h>
 
 #include <efi.h>
 #include <csmwrap.h>
@@ -513,6 +512,30 @@ void __attribute__((noreturn)) panic(const char *fmt, ...)
     va_end(l);
     printf("*** System halted.\n");
     for (;;) { asm volatile("hlt"); }
+}
+
+static int simple_wcscmp(const CHAR16 *a, const CHAR16 *b)
+{
+    while (*a && (*a == *b)) {
+        a++;
+        b++;
+    }
+
+    return *a - *b;
+}
+
+static int simple_wcsncmp(const CHAR16 *a, const CHAR16 *b, unsigned int n)
+{
+    while (n && *a && (*a == *b)) {
+        a++;
+        b++;
+        n--;
+    }
+
+    if (n == 0)
+        return 0;
+
+    return *a - *b;
 }
 
 EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
