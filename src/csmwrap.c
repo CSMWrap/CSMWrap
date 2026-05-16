@@ -523,6 +523,7 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     EFI_IA32_REGISTER_SET Regs;
     BOOLEAN vgabios_from_cbfs = FALSE;
     const char *vgabios_cbfs_filename = "vgabios.bin";
+    char cbfs_filename_buf[256];
 
     gST = SystemTable;
     gBS = SystemTable->BootServices;
@@ -591,7 +592,6 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 
                 const CHAR16 *wpath = gConfig.vgabios_path + 5;
                 if (wpath[0] != L'\0') {
-                    char cbfs_filename_buf[256];
                     UINTN i;
                     for (i = 0; i < sizeof(cbfs_filename_buf) - 1 && wpath[i] != L'\0'; i++) {
                         cbfs_filename_buf[i] = (char)wpath[i];
