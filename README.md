@@ -72,7 +72,7 @@ From EFI Shell
 -bs -rt -nv =L"serial=true;verbose=true;vgabios=\EFI\csmwrap\vgabios.bin"
 
 Or from Linux (efivarfs):
->printf '\x07\x00\x00\x00serial=true;verbose=true;vgabios=...' \> sys/firmware/efi/efivars/CsmWrapConfig-7c436110-ab2a-4fff-a880-fe41995c9f82
+>printf '\x07\x00\x00\x00serial=true;verbose=true;vgabios=...' > /sys/firmware/efi/efivars/CsmWrapConfig-7c436110-ab2a-4fff-a880-fe41995c9f82
 
 
 ### Options
