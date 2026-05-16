@@ -7,8 +7,6 @@
 
 #define CBFS_HEADER_MAGIC_LE 0x4F524243UL
 #define CBFS_HEADER_MAGIC_BE 0x4342524FUL
-#define CBFS_HEADER_MAGIC2   0x4C415243
-#define CBFS_HEADER_SIGNATURE 0x4F524243
 #define CBFS_FILE_MAGIC "LARCHIVE"
 
 static inline uint32_t be32(uint32_t v)
@@ -62,8 +60,8 @@ static uintptr_t cbfs_rom_base(struct cbfs_header *hdr)
     return (uintptr_t)(0x100000000ULL - (uint64_t)be32(hdr->romsize));
 }
 
- void *cbfs_find_file(struct cbfs_header *hdr,
-                             const char *name, uint32_t *data_len)
+void *cbfs_find_file(struct cbfs_header *hdr,
+                     const char *name, uint32_t *data_len)
 {
     uintptr_t rom_base = cbfs_rom_base(hdr);
     uintptr_t cur = rom_base + be32(hdr->offset);
