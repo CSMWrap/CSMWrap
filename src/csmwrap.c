@@ -605,49 +605,48 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
         sfs_dir = NULL;
     }
 
-     /* Load configuration from csmwrap.ini next to our executable or from NVRAM */
-        config_load(sfs_dir, loaded_image ? loaded_image->FilePath : NULL);
+    /* Load configuration from csmwrap.ini next to our executable or from NVRAM */
+    config_load(sfs_dir, loaded_image ? loaded_image->FilePath : NULL);
 
-            if (simple_wcscmp(gConfig.vgabios_path, L"cbfs") == 0) {
-                vgabios_from_cbfs = TRUE;
-            } else if (simple_wcsncmp(gConfig.vgabios_path, L"cbfs:", 5) == 0) {
-                vgabios_from_cbfs = TRUE;
+    if (simple_wcscmp(gConfig.vgabios_path, L"cbfs") == 0) {
+        vgabios_from_cbfs = TRUE;
+    } else if (simple_wcsncmp(gConfig.vgabios_path, L"cbfs:", 5) == 0) {
+        vgabios_from_cbfs = TRUE;
 
-                const CHAR16 *wpath = gConfig.vgabios_path + 5;
-                if (wpath[0] != L'\0') {
-                    UINTN i;
-                    for (i = 0; i < sizeof(cbfs_filename_buf) - 1 && wpath[i] != L'\0'; i++) {
-                        cbfs_filename_buf[i] = (char)wpath[i];
-                    }
-                    cbfs_filename_buf[i] = '\0';
-                    vgabios_cbfs_filename = cbfs_filename_buf;
-                }
-        }
-
-        
-if (!vgabios_from_cbfs){
-    /* Load custom VGABIOS from config path if specified */
-    EFI_FILE_PROTOCOL *vgabios_file_handle = NULL;
-    if (sfs_dir != NULL && gConfig.vgabios_path[0] != 0) {
-        if (sfs_dir->Open(sfs_dir, &vgabios_file_handle, gConfig.vgabios_path, EFI_FILE_MODE_READ, 0) == EFI_SUCCESS) {
-            UINTN max_size = 256 * 1024;
-            if (gBS->AllocatePool(EfiLoaderData, max_size, &vbios_loc) != EFI_SUCCESS) {
-                vbios_loc = NULL;
-            } else {
-                if (vgabios_file_handle->Read(vgabios_file_handle, &max_size, vbios_loc) == EFI_SUCCESS) {
-                    printf("Loaded custom VBIOS from config. Using it as our VBIOS!\n");
-                    vbios_size = max_size;
-                } else {
-                    gBS->FreePool(vbios_loc);
-                    vbios_loc = NULL;
-                }
+        const CHAR16 *wpath = gConfig.vgabios_path + 5;
+        if (wpath[0] != L'\0') {
+            UINTN i;
+            for (i = 0; i < sizeof(cbfs_filename_buf) - 1 && wpath[i] != L'\0'; i++) {
+                cbfs_filename_buf[i] = (char)wpath[i];
             }
-            vgabios_file_handle->Close(vgabios_file_handle);
-        } else {
-            printf("warning: could not open configured vgabios path\n");
+            cbfs_filename_buf[i] = '\0';
+            vgabios_cbfs_filename = cbfs_filename_buf;
         }
     }
-    }else {
+
+    if (!vgabios_from_cbfs) {
+        /* Load custom VGABIOS from config path if specified */
+        EFI_FILE_PROTOCOL *vgabios_file_handle = NULL;
+        if (sfs_dir != NULL && gConfig.vgabios_path[0] != 0) {
+            if (sfs_dir->Open(sfs_dir, &vgabios_file_handle, gConfig.vgabios_path, EFI_FILE_MODE_READ, 0) == EFI_SUCCESS) {
+                UINTN max_size = 256 * 1024;
+                if (gBS->AllocatePool(EfiLoaderData, max_size, &vbios_loc) != EFI_SUCCESS) {
+                    vbios_loc = NULL;
+                } else {
+                    if (vgabios_file_handle->Read(vgabios_file_handle, &max_size, vbios_loc) == EFI_SUCCESS) {
+                        printf("Loaded custom VBIOS from config. Using it as our VBIOS!\n");
+                        vbios_size = max_size;
+                    } else {
+                        gBS->FreePool(vbios_loc);
+                        vbios_loc = NULL;
+                    }
+                }
+                vgabios_file_handle->Close(vgabios_file_handle);
+            } else {
+                printf("warning: could not open configured vgabios path\n");
+            }
+        }
+    } else {
         uint32_t cbfs_size;
         void *cbfs_data;
         struct cbfs_header *hdr = cbfs_find_header();
@@ -662,7 +661,7 @@ if (!vgabios_from_cbfs){
             panic("%s not found in CBFS", vgabios_cbfs_filename);
         }
 
-        if (gBS->AllocatePool(EfiLoaderData,cbfs_size + 1, &vbios_loc) != EFI_SUCCESS) {
+        if (gBS->AllocatePool(EfiLoaderData, cbfs_size + 1, &vbios_loc) != EFI_SUCCESS) {
             panic("failed to allocate pool for VBIOS");
         }
 
