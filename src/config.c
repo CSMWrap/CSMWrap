@@ -668,75 +668,86 @@ static bool config_load_from_nvram(void)
     return true;
 }
 
-void config_load(EFI_FILE_PROTOCOL *root_dir, EFI_DEVICE_PATH_PROTOCOL *file_path)
+/*
+ * Try to load and parse the .ini file sitting next to the EFI binary.
+ * Returns true only if a config file was found and parsed; any failure
+ * (no filesystem, unbuildable path, missing/empty/oversized/unreadable
+ * file) returns false so the caller can fall back to NVRAM.
+ */
+static bool config_load_from_file(EFI_FILE_PROTOCOL *root_dir,
+                                  EFI_DEVICE_PATH_PROTOCOL *file_path)
 {
-    /* ------------------------------------------------------------------ *
-     * 1. Try the .ini file next to the EFI binary (original behaviour).  *
-     * ------------------------------------------------------------------ */
-    if (root_dir && file_path) {
-        CHAR16 path[512];
-        if (!config_build_path(file_path, path, ARRAY_SIZE(path))) {
-            printf("Config: could not determine executable directory\n");
-            return;
-        }
+    if (!root_dir || !file_path)
+        return false;
 
-        EFI_FILE_PROTOCOL *file = NULL;
-        EFI_STATUS status = root_dir->Open(root_dir, &file, path, EFI_FILE_MODE_READ, 0);
-        if (status == EFI_SUCCESS) {
-            /* File exists - proceed with fat file load logic. */
-            /* Get file size via EFI_FILE_INFO */
-            EFI_GUID fi_guid = EFI_FILE_INFO_ID;
-            UINTN info_size = 0;
-            file->GetInfo(file, &fi_guid, &info_size, NULL);
-
-            void *info_buf = NULL;
-            if (gBS->AllocatePool(EfiLoaderData, info_size, &info_buf) != EFI_SUCCESS) {
-                file->Close(file);
-                return;
-            }
-
-            UINTN file_size = 0;
-            if (file->GetInfo(file, &fi_guid, &info_size, info_buf) == EFI_SUCCESS) {
-                EFI_FILE_INFO *fi = info_buf;
-                file_size = (UINTN)fi->FileSize;
-            }
-            gBS->FreePool(info_buf);
-
-            if (file_size == 0 || file_size > 64 * 1024) {
-                printf("Config: file empty or too large (%lu bytes)\n", (unsigned long)file_size);
-                file->Close(file);
-                return;
-            }
-
-            /* Read file contents */
-            char *buf = NULL;
-            if (gBS->AllocatePool(EfiLoaderData, file_size + 1, (void **)&buf) != EFI_SUCCESS) {
-                file->Close(file);
-                return;
-            }
-
-            UINTN read_size = file_size;
-            if (file->Read(file, &read_size, buf) != EFI_SUCCESS) {
-                gBS->FreePool(buf);
-                file->Close(file);
-                return;
-            }
-            buf[read_size] = '\0';
-            file->Close(file);
-
-            printf("Config: loaded csmwrap.ini (%lu bytes)\n", (unsigned long)read_size);
-            config_parse(buf, read_size);
-
-            gBS->FreePool(buf);
-            return;
-        }
+    CHAR16 path[512];
+    if (!config_build_path(file_path, path, ARRAY_SIZE(path))) {
+        printf("Config: could not determine executable directory\n");
+        return false;
     }
 
-    /* ------------------------------------------------------------------ *
-     * 2. No .ini file (or no filesystem at all) - try NVRAM variable.    *
-     *    This is the primary path when bundled as a coreboot EDK2 payload *
-     *    with no EFIESP partition available.                              *
-     * ------------------------------------------------------------------ */
+    EFI_FILE_PROTOCOL *file = NULL;
+    if (root_dir->Open(root_dir, &file, path, EFI_FILE_MODE_READ, 0) != EFI_SUCCESS) {
+        /* Not an error - config file is optional */
+        return false;
+    }
+
+    /* Get file size via EFI_FILE_INFO */
+    EFI_GUID fi_guid = EFI_FILE_INFO_ID;
+    UINTN info_size = 0;
+    file->GetInfo(file, &fi_guid, &info_size, NULL);
+
+    void *info_buf = NULL;
+    if (gBS->AllocatePool(EfiLoaderData, info_size, &info_buf) != EFI_SUCCESS) {
+        file->Close(file);
+        return false;
+    }
+
+    UINTN file_size = 0;
+    if (file->GetInfo(file, &fi_guid, &info_size, info_buf) == EFI_SUCCESS) {
+        EFI_FILE_INFO *fi = info_buf;
+        file_size = (UINTN)fi->FileSize;
+    }
+    gBS->FreePool(info_buf);
+
+    if (file_size == 0 || file_size > 64 * 1024) {
+        printf("Config: file empty or too large (%lu bytes)\n", (unsigned long)file_size);
+        file->Close(file);
+        return false;
+    }
+
+    /* Read file contents */
+    char *buf = NULL;
+    if (gBS->AllocatePool(EfiLoaderData, file_size + 1, (void **)&buf) != EFI_SUCCESS) {
+        file->Close(file);
+        return false;
+    }
+
+    UINTN read_size = file_size;
+    if (file->Read(file, &read_size, buf) != EFI_SUCCESS) {
+        gBS->FreePool(buf);
+        file->Close(file);
+        return false;
+    }
+    buf[read_size] = '\0';
+    file->Close(file);
+
+    printf("Config: loaded csmwrap.ini (%lu bytes)\n", (unsigned long)read_size);
+    config_parse(buf, read_size);
+
+    gBS->FreePool(buf);
+    return true;
+}
+
+void config_load(EFI_FILE_PROTOCOL *root_dir, EFI_DEVICE_PATH_PROTOCOL *file_path)
+{
+    /* 1. Try the .ini file next to the EFI binary (original behaviour). */
+    if (config_load_from_file(root_dir, file_path))
+        return;
+
+    /* 2. No usable .ini file - fall back to the NVRAM variable. This is the
+     *    primary path when bundled as a coreboot EDK2 payload with no
+     *    EFIESP partition available. */
     printf("Config: no .ini file found, trying NVRAM variable\n");
     config_load_from_nvram();
 }
