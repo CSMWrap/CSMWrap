@@ -15,6 +15,20 @@ as an out-of-firmware EFI application, effectively creating a compatibility laye
 
 Logo art by [conkkerxd](https://github.com/conkkerxd).
 
+## Building
+
+Either x86-64 or IA32 architecture is required.
+
+ Install following dependencies
+ 
+ - base-devel (including make)
+ - gnu-efi
+ - xxd (in some distros its called tinyxxd)
+
+Then simply run "make" to build the program.
+
+After building, the .efi file will be located at "bin-$(arch)" such as "bin-x86_64" or "bin-ia32" 
+
 ## Executive Summary
 
 The idea is to drop the 64-bit or 32-bit version of CSMWrap (depending on the hardware, dropping both also works) into a `/EFI/BOOT/`
