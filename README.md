@@ -24,6 +24,7 @@ Either x86-64 or IA32 architecture is required.
  - base-devel (including make)
  - gnu-efi
  - xxd (in some distros its called tinyxxd)
+ - nasm
 
 Then simply run "make" to build the program.
 
