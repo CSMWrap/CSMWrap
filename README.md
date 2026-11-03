@@ -1,4 +1,4 @@
-# CSMWrap is Deprecated!
+# CSMWrap is Deprecated! Try out [ReBIOS](https://github.com/ReBIOS-Project/ReBIOS).
 
 CSMWrap puts SeaBIOS directly on top of UEFI and hopes the hardware still looks enough like a PC for everything to work. Increasingly it doesn't. Most new video cards ship without a legacy VBIOS, so there is nothing for the OS to draw with. Some chipsets have dropped legacy ISA peripherals assumed to exist by legacy BIOS OSes and loaders, and/or dropped things like the legacy xAPIC in favour of using only the x2APIC. DMA from legacy drivers breaks whenever the firmware leaves the IOMMU enabled, and so on and so forth. We have tried to hack around these for a while and honestly it isn't going anywhere. These are not CSMWrap bugs, they are things CSMWrap has no way to fix.
 
@@ -8,8 +8,11 @@ The catch is that you need VT-x with EPT (or AMD-V with nested paging) and an IO
 
 There won't be any significant development on CSMWrap from us going forward. The existing releases will stay up, but we encourage everyone to try ReBIOS whenever possible.
 
-Releases: https://github.com/ReBIOS-Project/ReBIOS/releases
-Issues: https://github.com/ReBIOS-Project/ReBIOS/issues
+ReBIOS: https://github.com/ReBIOS-Project/ReBIOS
+
+ReBIOS releases: https://github.com/ReBIOS-Project/ReBIOS/releases
+
+ReBIOS issues: https://github.com/ReBIOS-Project/ReBIOS/issues
 
 The original CSMWrap readme follows:
 
