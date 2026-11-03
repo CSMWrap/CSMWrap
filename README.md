@@ -1,3 +1,18 @@
+# CSMWrap is Deprecated!
+
+CSMWrap puts SeaBIOS directly on top of UEFI and hopes the hardware still looks enough like a PC for everything to work. Increasingly it doesn't. Most new video cards ship without a legacy VBIOS, so there is nothing for the OS to draw with. Some chipsets have dropped legacy ISA peripherals assumed to exist by legacy BIOS OSes and loaders, and/or dropped things like the legacy xAPIC in favour of using only the x2APIC. DMA from legacy drivers breaks whenever the firmware leaves the IOMMU enabled, and so on and so forth. We have tried to hack around these for a while and honestly it isn't going anywhere. These are not CSMWrap bugs, they are things CSMWrap has no way to fix.
+
+So we went a different route and wrote [ReBIOS](https://github.com/ReBIOS-Project/ReBIOS). It still runs SeaBIOS, but inside a thin hypervisor, so when the hardware is missing something it can just provide it virtually, amongst many, many other improvements on top of the current state of CSMWrap, most of them listed in ReBIOS's own README.md. You can drop it in where CSMWrap was and it will pick up your existing `csmwrap.ini`.
+
+The catch is that you need VT-x with EPT (or AMD-V with nested paging) and an IOMMU, and both have to be turned on in your firmware setup. Most machines from the last decade or so have them.
+
+There won't be any significant development on CSMWrap from us going forward. The existing releases will stay up, but we encourage everyone to try ReBIOS whenever possible.
+
+Releases: https://github.com/ReBIOS-Project/ReBIOS/releases
+Issues: https://github.com/ReBIOS-Project/ReBIOS/issues
+
+The original CSMWrap readme follows:
+
 # CSMWrap [![Build Status](https://github.com/FlyGoat/CSMWrap/actions/workflows/build.yml/badge.svg)](https://github.com/FlyGoat/CSMWrap/actions/workflows/build.yml)
 
 CSMWrap is an EFI application designed to be a drop-in solution to enable legacy BIOS booting on modern UEFI-only (class 3) systems.
@@ -11,7 +26,6 @@ Either x86-64 or IA32 architecture is required.
  Install following dependencies
  
  - base-devel (including make)
- - gnu-efi
  - xxd (in some distros its called tinyxxd)
  - nasm
 
@@ -139,7 +153,7 @@ Yes! Native CSM firmware is often riddled with issues and hardly tested against 
 legacy BIOS implementation - SeaBIOS - and it is tested against legacy OSes. Issues affecting modern, commonly shipped CSM implementations do
 not affect CSMWrap, like for example:
 
-- Dirty control register values at handoff. (This is something that [cregfix](https://github.com/mintsuki/cregfix) was created to work around).
+- Dirty control register values at handoff. (This is something that [cregfix](https://github.com/Mintsuki/cregfix) was created to work around).
 - Legacy BIOS routines failing to reliably run when called from Virtual 8086 Mode. EMM386, Windows 3.x under 386 enhanced mode, and more, are affected
   by this issue and it results in crashes. The reason for this is a bit technical for this README file, but CSMWrap is not affected.
 
