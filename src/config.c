@@ -12,6 +12,7 @@ struct csmwrap_config gConfig = {
     .serial_port = 0x3f8,
     .serial_baud = 115200,
     .vgabios_path = {0},
+    .boot_image_path = {0},
     .iommu_disable = true,
     .verbose = false,
     .vga_specified = false,
@@ -341,6 +342,13 @@ static void config_apply(const char *key, const char *val)
             gConfig.vgabios_path[i] = (CHAR16)(unsigned char)val[i];
         gConfig.vgabios_path[i] = 0;
         printf("  vgabios = %s\n", val);
+    } else if (streq_nocase(key, "boot_image")) {
+        /* Convert ASCII path to CHAR16 */
+        size_t i;
+        for (i = 0; val[i] && i < CONFIG_VGABIOS_PATH_MAX - 1; i++)
+            gConfig.boot_image_path[i] = (CHAR16)(unsigned char)val[i];
+        gConfig.boot_image_path[i] = 0;
+        printf("  boot_image = %s\n", val);
     } else if (streq_nocase(key, "iommu_disable")) {
         bool v;
         if (parse_bool(val, &v)) {
